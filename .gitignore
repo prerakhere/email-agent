@@ -1,0 +1,7 @@
+.venv/
+.env
+local.settings.json
+token*.json
+credentials*.json
+__pycache__/
+LEARNING.md

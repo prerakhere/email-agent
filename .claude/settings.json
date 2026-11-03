@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./credentials.json)",
+      "Read(./token*.json)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./local.settings.json)",
+      "Edit(./credentials.json)",
+      "Edit(./token*.json)",
+      "Bash(cat *credentials*)",
+      "Bash(cat *token*.json*)",
+      "Bash(cat *.env*)",
+      "Bash(grep * credentials.json*)",
+      "Bash(head * credentials.json*)",
+      "Bash(tail * credentials.json*)"
+    ]
+  }
+}
