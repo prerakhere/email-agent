@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -40,11 +41,14 @@ def get_credentials() -> Credentials:
     creds = None
     if TOKEN.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN), SCOPES)
-    if creds and creds.valid:
-        return creds
     if creds and creds.refresh_token:
-        creds.refresh(Request())
-    else:
+        # Always refresh (don't trust local expiry): catches revoked/expired tokens early.
+        try:
+            creds.refresh(Request())
+        except RefreshError:
+            print("Stored token is revoked/expired; starting a fresh login.")
+            creds = None
+    if not creds:
         flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS), SCOPES)
         creds = flow.run_local_server(port=0)
     TOKEN.write_text(creds.to_json())
