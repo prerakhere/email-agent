@@ -14,7 +14,8 @@ summaries/digest -> deploy -> backfill -> iterate).
 - Work directly on `main`; small atomic commits (one logical change, message explains why). Tag phase ends (`phase-N-done`).
 - Run the phase's verification (tests / script) before every commit.
 - `DRY_RUN=true` by default; never modify real Gmail unless explicitly enabled.
-- Labels live under `Agent/...`. Move = add label + remove INBOX; never archive without a label, never delete mail.
+- Labels (hybrid): file into the user's EXISTING labels when there is a clear match (e.g. Finances/*, Newsletters, To Go Through/*);
+  otherwise fall back to `Agent/...` (Agent/Needs-Review, Agent/Job-Alerts). Move = add label + remove INBOX; never archive without a label, never delete mail.
 
 ## Logging
 - After each significant change/milestone, append a dated entry to `WORKLOG.md` (gitignored). Concept explanations go in `LEARNING.md` via `/learn`.
