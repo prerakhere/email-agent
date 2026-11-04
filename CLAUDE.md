@@ -16,6 +16,7 @@ summaries/digest -> deploy -> backfill -> iterate).
 - `DRY_RUN=true` by default; never modify real Gmail unless explicitly enabled.
 - Labels (hybrid): file into the user's EXISTING labels when there is a clear match (e.g. Finances/*, Newsletters, To Go Through/*);
   otherwise fall back to `Agent/...` (Agent/Needs-Review, Agent/Job-Alerts). Move = add label + remove INBOX; never archive without a label, never delete mail.
+  The agent never invents free-form labels: unmatched mail -> Agent/Needs-Review; new labels are only suggested in the digest (Phase 8) and need user approval.
 
 ## Logging
 - After each significant change/milestone, append a dated entry to `WORKLOG.md` (gitignored). Concept explanations go in `LEARNING.md` via `/learn`.
