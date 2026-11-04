@@ -13,7 +13,11 @@
       "Bash(cat *.env*)",
       "Bash(grep * credentials.json*)",
       "Bash(head * credentials.json*)",
-      "Bash(tail * credentials.json*)"
+      "Bash(tail * credentials.json*)",
+      "Read(~/.google_workspace_mcp/**)",
+      "Edit(~/.google_workspace_mcp/**)",
+      "Bash(cat *google_workspace_mcp*)",
+      "Bash(ls *google_workspace_mcp/credentials*)"
     ]
   },
   "hooks": {
