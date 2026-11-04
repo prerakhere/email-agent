@@ -27,3 +27,7 @@ summaries/digest -> deploy -> backfill -> iterate).
 ## Learning
 - User is new to LangGraph/LangChain/LangSmith: use their features broadly and explain each new concept briefly
   before using it. Record explanations in `LEARNING.md` (gitignored) when asked.
+
+## Communication
+- Before every file change, command, or commit, explain in 1-2 plain-English sentences what it does and why; after, say what changed.
+- Never chain write-tests, write-code, and commit without narrating each step. Use plain words in command descriptions.

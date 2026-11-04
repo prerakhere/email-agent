@@ -18,6 +18,9 @@
       "Edit(~/.google_workspace_mcp/**)",
       "Bash(cat *google_workspace_mcp*)",
       "Bash(ls *google_workspace_mcp/credentials*)"
+    ],
+    "ask": [
+      "Bash(git commit *)"
     ]
   },
   "hooks": {
@@ -28,6 +31,15 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ruff_format.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/log_commit.sh"
           }
         ]
       }
