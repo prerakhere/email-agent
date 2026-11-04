@@ -16,6 +16,9 @@ summaries/digest -> deploy -> backfill -> iterate).
 - `DRY_RUN=true` by default; never modify real Gmail unless explicitly enabled.
 - Labels live under `Agent/...`. Move = add label + remove INBOX; never archive without a label, never delete mail.
 
+## Logging
+- After each significant change/milestone, append a dated entry to `WORKLOG.md` (gitignored). Concept explanations go in `LEARNING.md` via `/learn`.
+
 ## Secrets
 - Never read, print, or commit `credentials.json`, `token*.json`, `.env`, `local.settings.json` (denied in `.claude/settings.json`).
 - Scripts must never print tokens or email bodies' secrets to the terminal.
