@@ -91,8 +91,16 @@ class GmailClient:
             x["name"] for x in response.get("labels", []) if x["type"] == "user"
         )
 
-    def fetch_recent(self, days: int, max_results: int = 100) -> list[Email]:
-        """Inbox mail from the last `days` days, newest first, at most `max_results`."""
+    def label_ids_by_name(self) -> dict[str, str]:
+        response = self._service.users().labels().list(userId="me").execute()
+        return {
+            x["name"]: x["id"]
+            for x in response.get("labels", [])
+            if x["type"] == "user"
+        }
+
+    def _list_message_ids(self, max_results: int, **query) -> list[str]:
+        """Message ids matching `query` (messages.list kwargs), following pagination."""
         ids: list[str] = []
         page_token = None
         while len(ids) < max_results:
@@ -101,9 +109,9 @@ class GmailClient:
                 .messages()
                 .list(
                     userId="me",
-                    q=f"in:inbox newer_than:{days}d",
                     maxResults=min(PAGE_SIZE, max_results - len(ids)),
                     pageToken=page_token,
+                    **query,
                 )
                 .execute()
             )
@@ -111,6 +119,29 @@ class GmailClient:
             page_token = response.get("nextPageToken")
             if not page_token:
                 break
+        return ids[:max_results]
+
+    def fetch_senders(self, label_id: str, max_results: int = 200) -> list[str]:
+        """`From` headers of mail in one label. Metadata only: no bodies are fetched."""
+        senders = []
+        for mid in self._list_message_ids(max_results, labelIds=[label_id]):
+            message = (
+                self._service.users()
+                .messages()
+                .get(userId="me", id=mid, format="metadata", metadataHeaders=["From"])
+                .execute()
+            )
+            headers = message.get("payload", {}).get("headers", [])
+            sender = next(
+                (h["value"] for h in headers if h["name"].lower() == "from"), None
+            )
+            if sender:
+                senders.append(sender)
+        return senders
+
+    def fetch_recent(self, days: int, max_results: int = 100) -> list[Email]:
+        """Inbox mail from the last `days` days, newest first, at most `max_results`."""
+        ids = self._list_message_ids(max_results, q=f"in:inbox newer_than:{days}d")
         return [
             message_to_email(
                 self._service.users()

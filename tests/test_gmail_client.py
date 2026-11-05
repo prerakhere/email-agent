@@ -166,3 +166,60 @@ def test_list_label_names_returns_only_user_labels_sorted():
     ]
     service = fake_service([], {}, labels=labels)
     assert GmailClient(service).list_label_names() == ["Finances", "Newsletters"]
+
+
+def test_label_ids_by_name_maps_user_labels_only():
+    labels = [
+        {"id": "INBOX", "name": "INBOX", "type": "system"},
+        {"id": "Label_1", "name": "Newsletters", "type": "user"},
+        {"id": "Label_2", "name": "Finances/Bank", "type": "user"},
+    ]
+    service = fake_service([], {}, labels=labels)
+    assert GmailClient(service).label_ids_by_name() == {
+        "Newsletters": "Label_1",
+        "Finances/Bank": "Label_2",
+    }
+
+
+def sender_message(mid: str, sender: str | None) -> dict:
+    headers = [] if sender is None else [{"name": "From", "value": sender}]
+    return {"id": mid, "payload": {"headers": headers}}
+
+
+def test_fetch_senders_returns_from_headers_using_metadata_only():
+    service = fake_service(
+        [{"messages": [{"id": "a"}, {"id": "b"}]}],
+        {"a": sender_message("a", "X <x@a.com>"), "b": sender_message("b", "y@b.com")},
+    )
+    senders = GmailClient(service).fetch_senders("Label_1")
+    assert senders == ["X <x@a.com>", "y@b.com"]
+    msgs = service.users.return_value.messages.return_value
+    assert msgs.list.call_args.kwargs["labelIds"] == ["Label_1"]
+    assert msgs.get.call_args.kwargs["format"] == "metadata"
+    assert msgs.get.call_args.kwargs["metadataHeaders"] == ["From"]
+
+
+def test_fetch_senders_follows_pagination_and_stops_at_max_results():
+    service = fake_service(
+        [
+            {"messages": [{"id": "a"}, {"id": "b"}], "nextPageToken": "p2"},
+            {"messages": [{"id": "c"}]},
+        ],
+        {k: sender_message(k, f"{k}@x.com") for k in "abc"},
+    )
+    assert GmailClient(service).fetch_senders("L", max_results=2) == [
+        "a@x.com",
+        "b@x.com",
+    ]
+
+
+def test_fetch_senders_skips_messages_without_a_from_header():
+    service = fake_service(
+        [{"messages": [{"id": "a"}, {"id": "b"}]}],
+        {"a": sender_message("a", None), "b": sender_message("b", "b@x.com")},
+    )
+    assert GmailClient(service).fetch_senders("L") == ["b@x.com"]
+
+
+def test_fetch_senders_for_an_empty_label_returns_empty_list():
+    assert GmailClient(fake_service([{}], {})).fetch_senders("L") == []
