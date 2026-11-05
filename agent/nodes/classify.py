@@ -56,18 +56,21 @@ def build_classifier(llm) -> Runnable:
     return PROMPT | llm.with_structured_output(LLMClassification)
 
 
+def build_inputs(email: Email) -> dict[str, str]:
+    """Exactly what leaves this machine for one email (also used by the --show-sent preview)."""
+    return {
+        "sender": email.sender,
+        "subject": redact(email.subject),
+        "has_unsubscribe": "yes" if email.list_unsubscribe else "no",
+        # Redact first, then trim, so a number cut at the boundary can't leak partial digits.
+        "body_preview": redact(email.body_preview)[:BODY_CHARS],
+    }
+
+
 def classify(
     email: Email, chain: Runnable, threshold: float = DEFAULT_THRESHOLD
 ) -> Classification:
-    answer: LLMClassification = chain.invoke(
-        {
-            "sender": email.sender,
-            "subject": redact(email.subject),
-            "has_unsubscribe": "yes" if email.list_unsubscribe else "no",
-            # Redact first, then trim, so a number cut at the boundary can't leak partial digits.
-            "body_preview": redact(email.body_preview)[:BODY_CHARS],
-        }
-    )
+    answer: LLMClassification = chain.invoke(build_inputs(email))
     if answer.confidence < threshold:
         return Classification(
             category=Category.NEEDS_REVIEW,

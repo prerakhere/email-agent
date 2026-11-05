@@ -1,8 +1,15 @@
-"""Plain-text table of proposals for the dry-run (no email bodies, only sender/subject)."""
+"""Plain-text reports for the dry-run.
+
+format_table shows only sender/subject/category. format_sent_preview prints the REDACTED
+text that would be sent to the LLM (never the original body), so it can be inspected first.
+"""
 
 from collections import Counter
+from collections.abc import Mapping
 
-from agent.schemas import Proposal
+from agent.nodes.classify import build_inputs
+from agent.nodes.prefilter import prefilter
+from agent.schemas import Category, Email, Proposal
 
 # (header, width, getter)
 COLUMNS = [
@@ -36,3 +43,26 @@ def format_table(proposals: list[Proposal]) -> str:
     counts = ", ".join(f"{name}={n}" for name, n in sorted(by_category.items()))
     lines.append(f"\n{len(proposals)} emails, {rules} decided by rules | {counts}")
     return "\n".join(lines)
+
+
+def format_sent_preview(emails: list[Email], rules: Mapping[str, Category]) -> str:
+    """Show exactly what the LLM would receive. Rule-matched mail is never sent."""
+    to_send = [e for e in emails if prefilter(e, rules) is None]
+    skipped = len(emails) - len(to_send)
+    if not to_send:
+        return f"Nothing would be sent to the LLM. {skipped} matched a rule and would not be sent."
+    blocks = []
+    for n, email in enumerate(to_send, start=1):
+        sent = build_inputs(email)
+        blocks.append(
+            f"--- #{n} ---\n"
+            f"From: {sent['sender']}\n"
+            f"Subject: {sent['subject']}\n"
+            f"Has unsubscribe header: {sent['has_unsubscribe']}\n"
+            f"Body start (redacted): {sent['body_preview']}"
+        )
+    header = (
+        f"{len(to_send)} of {len(emails)} emails would be sent to the LLM; "
+        f"{skipped} matched a rule and would not be sent. Exact (redacted) content:"
+    )
+    return header + "\n\n" + "\n\n".join(blocks)
