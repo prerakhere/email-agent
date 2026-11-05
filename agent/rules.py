@@ -32,6 +32,30 @@ SHARED_DOMAINS = {
 }
 
 
+# The user's existing folders that reliably imply a category. A folder also covers everything
+# nested under it. Anything not listed (Finances/Bank, Tax, Insurance, Travel, ...) is skipped
+# until we know what category it should teach.
+FOLDER_CATEGORIES: dict[str, Category] = {
+    "Newsletters": Category.NEWSLETTERS,
+    "To Go Through": Category.NEWSLETTERS,
+    "Finances/Statements, Receipts": Category.BILLS,
+    "Finances/subscriptions": Category.BILLS,
+}
+
+
+def labels_to_categories(label_names: Iterable[str]) -> dict[str, Category]:
+    """Which of the user's labels teach a category: the folder itself or anything under it."""
+    folders = {name.lower(): category for name, category in FOLDER_CATEGORIES.items()}
+    result: dict[str, Category] = {}
+    for name in label_names:
+        lowered = name.lower()
+        for folder, category in folders.items():
+            if lowered == folder or lowered.startswith(folder + "/"):
+                result[name] = category
+                break
+    return result
+
+
 def learn_rules(
     samples: Iterable[tuple[str, Category]], min_messages: int = 2
 ) -> dict[str, Category]:

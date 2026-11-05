@@ -1,4 +1,4 @@
-from agent.rules import learn_rules, load_rules, save_rules
+from agent.rules import labels_to_categories, learn_rules, load_rules, save_rules
 from agent.schemas import Category
 
 
@@ -103,3 +103,55 @@ def test_save_and_load_round_trip(tmp_path):
 
 def test_load_rules_returns_empty_dict_when_file_is_missing(tmp_path):
     assert load_rules(tmp_path / "nope.json") == {}
+
+
+# ---- which of the user's folders teach us which category ----
+
+
+def test_mapped_folders_and_their_sublabels_get_a_category():
+    result = labels_to_categories(
+        [
+            "Newsletters",
+            "To Go Through",
+            "To Go Through/bytebytego",
+            "Finances/Statements, Receipts",
+            "Finances/Statements, Receipts/cards/credit cards/CC Statements",
+            "Finances/subscriptions",
+        ]
+    )
+    assert result == {
+        "Newsletters": Category.NEWSLETTERS,
+        "To Go Through": Category.NEWSLETTERS,
+        "To Go Through/bytebytego": Category.NEWSLETTERS,
+        "Finances/Statements, Receipts": Category.BILLS,
+        "Finances/Statements, Receipts/cards/credit cards/CC Statements": Category.BILLS,
+        "Finances/subscriptions": Category.BILLS,
+    }
+
+
+def test_unmapped_labels_are_left_out():
+    labels = [
+        "Finances",
+        "Finances/Bank",
+        "Finances/Tax",
+        "Job Applications",
+        "Travel.",
+    ]
+    assert labels_to_categories(labels) == {}
+
+
+def test_lookalike_label_names_do_not_match():
+    # "Newsletters-old" is not underneath "Newsletters".
+    assert labels_to_categories(["Newsletters-old", "To Go Through2"]) == {}
+
+
+def test_label_matching_ignores_case():
+    result = labels_to_categories(["newsletters", "TO GO THROUGH/Medium"])
+    assert result == {
+        "newsletters": Category.NEWSLETTERS,
+        "TO GO THROUGH/Medium": Category.NEWSLETTERS,
+    }
+
+
+def test_no_labels_gives_empty_mapping():
+    assert labels_to_categories([]) == {}
