@@ -26,15 +26,11 @@ from agent.gmail_client import GmailClient
 from agent.graph import build_graph
 from agent.nodes.classify import build_classifier
 from agent.report import format_sent_preview, format_table
-from agent.schemas import Category
+from agent.rules import load_rules
 
 load_dotenv(ROOT / ".env")
 
-# Temporary hand-written rules until Phase 2 seeds them from your existing folders.
-RULES = {
-    "bytebytego.com": Category.NEWSLETTERS,
-    "quastor.org": Category.NEWSLETTERS,
-}
+RULES_PATH = ROOT / "rules.json"  # written by scripts/seed_rules.py
 
 REQUIRED = [
     "AZURE_OPENAI_ENDPOINT",
@@ -56,13 +52,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    rules = load_rules(RULES_PATH)
+    if rules:
+        print(f"Loaded {len(rules)} sender rules from {RULES_PATH.name}.")
+    else:
+        print(
+            f"No rules found ({RULES_PATH.name} missing/empty): every email goes to the LLM."
+        )
+
     if args.show_sent:
         gmail = GmailClient(build("gmail", "v1", credentials=get_credentials()))
         emails = gmail.fetch_recent(days=args.days, max_results=args.max_results)
         print(
             "PREVIEW: nothing is sent anywhere; this is what the LLM would receive.\n"
         )
-        print(format_sent_preview(emails, RULES))
+        print(format_sent_preview(emails, rules))
         return
 
     missing = [name for name in REQUIRED if not os.environ.get(name)]
@@ -79,7 +83,7 @@ def main() -> None:
     gmail = GmailClient(build("gmail", "v1", credentials=get_credentials()))
     graph = build_graph(
         gmail,
-        RULES,
+        rules,
         build_classifier(llm),
         days=args.days,
         max_results=args.max_results,
