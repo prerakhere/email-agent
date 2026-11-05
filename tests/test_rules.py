@@ -155,3 +155,22 @@ def test_label_matching_ignores_case():
 
 def test_no_labels_gives_empty_mapping():
     assert labels_to_categories([]) == {}
+
+
+def test_most_specific_folder_wins_over_its_parent():
+    result = labels_to_categories(
+        [
+            "Finances/Statements, Receipts",
+            "Finances/Statements, Receipts/Donations",
+            "Finances/Statements, Receipts/Donations/2025",
+            "Finances/Statements, Receipts/AWS Bills",
+            "Finances/Statements, Receipts/Loan, EMI",
+        ]
+    )
+    assert result == {
+        "Finances/Statements, Receipts": Category.BILLS,
+        "Finances/Statements, Receipts/Donations": Category.RECEIPTS,
+        "Finances/Statements, Receipts/Donations/2025": Category.RECEIPTS,
+        "Finances/Statements, Receipts/AWS Bills": Category.BILLS,
+        "Finances/Statements, Receipts/Loan, EMI": Category.BILLS,
+    }

@@ -39,20 +39,23 @@ FOLDER_CATEGORIES: dict[str, Category] = {
     "Newsletters": Category.NEWSLETTERS,
     "To Go Through": Category.NEWSLETTERS,
     "Finances/Statements, Receipts": Category.BILLS,
+    "Finances/Statements, Receipts/Donations": Category.RECEIPTS,  # more specific than its parent
     "Finances/subscriptions": Category.BILLS,
 }
 
 
 def labels_to_categories(label_names: Iterable[str]) -> dict[str, Category]:
-    """Which of the user's labels teach a category: the folder itself or anything under it."""
+    """Which of the user's labels teach a category: the folder itself or anything under it.
+
+    When several mapped folders contain a label, the most specific (longest) one wins.
+    """
     folders = {name.lower(): category for name, category in FOLDER_CATEGORIES.items()}
     result: dict[str, Category] = {}
     for name in label_names:
         lowered = name.lower()
-        for folder, category in folders.items():
-            if lowered == folder or lowered.startswith(folder + "/"):
-                result[name] = category
-                break
+        matches = [f for f in folders if lowered == f or lowered.startswith(f + "/")]
+        if matches:
+            result[name] = folders[max(matches, key=len)]
     return result
 
 
