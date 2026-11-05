@@ -6,3 +6,5 @@ credentials*.json
 __pycache__/
 LEARNING.md
 WORKLOG.md
+# learned sender rules: contains the user's correspondents' email addresses
+rules.json
