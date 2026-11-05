@@ -57,6 +57,19 @@ class Classification(BaseModel):
     source: Literal["rule", "llm"]
 
 
+class Proposal(BaseModel):
+    """One row of the dry-run table: what we would do to one email."""
+
+    email_id: str
+    sender: str
+    subject: str
+    category: Category
+    label: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str
+    source: Literal["rule", "llm"]
+
+
 class Bill(BaseModel):
     vendor: str
     amount: Decimal = Field(gt=0)

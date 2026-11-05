@@ -1,0 +1,119 @@
+from langchain_core.runnables import RunnableLambda
+
+from agent.graph import build_graph
+from agent.nodes.classify import LLMClassification
+from agent.schemas import Category, Email
+
+
+def make_email(mid: str, sender: str, subject: str = "s") -> Email:
+    return Email(id=mid, thread_id=f"t-{mid}", sender=sender, subject=subject)
+
+
+class FakeGmail:
+    def __init__(self, emails, labels=()):
+        self._emails = emails
+        self._labels = list(labels)
+        self.fetch_args = None
+
+    def fetch_recent(self, days, max_results=100):
+        self.fetch_args = (days, max_results)
+        return self._emails
+
+    def list_label_names(self):
+        return self._labels
+
+
+class FakeChain:
+    """Stands in for prompt|llm. Records which emails reached the LLM."""
+
+    def __init__(self, category=Category.PROMOTIONS, confidence=0.9):
+        self.seen_subjects: list[str] = []
+        self._answer = LLMClassification(
+            category=category, confidence=confidence, reason="llm said so"
+        )
+        self.runnable = RunnableLambda(self._invoke)
+
+    def _invoke(self, inputs):
+        self.seen_subjects.append(inputs["subject"])
+        return self._answer
+
+
+RULES = {"bytebytego.com": Category.NEWSLETTERS}
+
+
+def run(emails, chain, rules=RULES, labels=(), **kwargs):
+    gmail = FakeGmail(emails, labels)
+    graph = build_graph(gmail, rules, chain.runnable, **kwargs)
+    return graph.invoke({}), gmail
+
+
+def test_rule_matched_mail_never_reaches_the_llm():
+    chain = FakeChain()
+    state, _ = run([make_email("1", "a@bytebytego.com", "weekly")], chain)
+    assert chain.seen_subjects == []
+    (proposal,) = state["proposals"]
+    assert proposal.category == Category.NEWSLETTERS
+    assert proposal.source == "rule"
+
+
+def test_unmatched_mail_goes_to_the_llm():
+    chain = FakeChain(Category.PROMOTIONS, 0.9)
+    state, _ = run([make_email("1", "deals@shop.com", "sale")], chain)
+    assert chain.seen_subjects == ["sale"]
+    (proposal,) = state["proposals"]
+    assert proposal.category == Category.PROMOTIONS
+    assert proposal.source == "llm"
+    assert proposal.reason == "llm said so"
+
+
+def test_llm_only_sees_the_unmatched_emails_and_order_is_preserved():
+    chain = FakeChain()
+    emails = [
+        make_email("1", "deals@shop.com", "first"),
+        make_email("2", "a@bytebytego.com", "second"),
+        make_email("3", "x@other.com", "third"),
+    ]
+    state, _ = run(emails, chain)
+    assert chain.seen_subjects == ["first", "third"]
+    assert [p.email_id for p in state["proposals"]] == ["1", "2", "3"]
+
+
+def test_low_confidence_llm_answer_is_proposed_as_needs_review():
+    chain = FakeChain(Category.BILLS, 0.4)
+    state, _ = run([make_email("1", "x@other.com")], chain)
+    (proposal,) = state["proposals"]
+    assert proposal.category == Category.NEEDS_REVIEW
+    assert proposal.label == "Agent/Needs-Review"
+
+
+def test_label_uses_existing_gmail_label_when_present_else_agent_fallback():
+    chain = FakeChain()
+    with_label, _ = run(
+        [make_email("1", "a@bytebytego.com")], chain, labels=["Newsletters"]
+    )
+    without_label, _ = run([make_email("1", "a@bytebytego.com")], chain, labels=[])
+    assert with_label["proposals"][0].label == "Newsletters"
+    assert without_label["proposals"][0].label == "Agent/Newsletters"
+
+
+def test_proposal_carries_sender_subject_and_confidence_for_the_table():
+    chain = FakeChain(Category.PROMOTIONS, 0.85)
+    state, _ = run([make_email("9", "Shop <deals@shop.com>", "50% off")], chain)
+    (proposal,) = state["proposals"]
+    assert proposal.email_id == "9"
+    assert proposal.sender == "Shop <deals@shop.com>"
+    assert proposal.subject == "50% off"
+    assert proposal.confidence == 0.85
+
+
+def test_fetch_uses_configured_window_and_cap():
+    chain = FakeChain()
+    _, gmail = run([], chain, days=7, max_results=25)
+    assert gmail.fetch_args == (7, 25)
+
+
+def test_empty_inbox_gives_no_proposals_and_no_llm_calls():
+    chain = FakeChain()
+    state, _ = run([], chain)
+    assert state["proposals"] == []
+    assert chain.seen_subjects == []
