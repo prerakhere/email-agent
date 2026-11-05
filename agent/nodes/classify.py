@@ -8,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
+from agent.redact import redact
 from agent.schemas import Category, Classification, Email
 
 BODY_CHARS = 500  # cost control: the model only sees the start of the body
@@ -61,9 +62,10 @@ def classify(
     answer: LLMClassification = chain.invoke(
         {
             "sender": email.sender,
-            "subject": email.subject,
+            "subject": redact(email.subject),
             "has_unsubscribe": "yes" if email.list_unsubscribe else "no",
-            "body_preview": email.body_preview[:BODY_CHARS],
+            # Redact first, then trim, so a number cut at the boundary can't leak partial digits.
+            "body_preview": redact(email.body_preview)[:BODY_CHARS],
         }
     )
     if answer.confidence < threshold:
