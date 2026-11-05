@@ -4,6 +4,16 @@ from agent.nodes.classify import LLMClassification, classify
 from agent.redact import redact
 from agent.schemas import Category, Email
 
+# Invisible characters, named so the source file contains no hidden characters itself.
+ZWSP = chr(0x200B)  # zero-width space
+ZWNJ = chr(0x200C)  # zero-width non-joiner
+ZWJ = chr(0x200D)  # zero-width joiner
+LRM = chr(0x200E)  # left-to-right mark
+BOM = chr(0xFEFF)  # byte order mark / zero-width no-break space
+SHY = chr(0x00AD)  # soft hyphen
+WJ = chr(0x2060)  # word joiner
+RLO = chr(0x202E)  # right-to-left override
+
 
 def test_long_digit_runs_are_masked():
     assert redact("Account 123456789012 debited") == "Account [NUMBER] debited"
@@ -55,6 +65,31 @@ def test_empty_and_already_redacted_text_are_stable():
     assert redact("") == ""
     once = redact("OTP is 4821 and card 4111 1111 1111 1111")
     assert redact(once) == once
+
+
+# ---- invisible characters (marketing "preheader" padding) ----
+
+
+def test_zero_width_characters_are_removed():
+    assert redact(f"Hel{ZWSP}lo{ZWNJ}{ZWJ}{BOM}") == "Hello"
+
+
+def test_other_invisible_characters_are_removed():
+    assert redact(f"a{SHY}b{LRM}{WJ}c{RLO}d") == "abcd"
+
+
+def test_padding_made_of_invisible_characters_collapses_to_one_space():
+    pad = f"{ZWNJ}{ZWSP}"
+    assert redact(f"Subject {pad} {pad} {pad} end") == "Subject end"
+
+
+def test_hidden_characters_cannot_split_a_number_to_dodge_masking():
+    assert redact(f"Card 4111{ZWSP}1111{ZWSP}1111{ZWSP}1111") == "Card [NUMBER]"
+
+
+def test_newlines_and_normal_non_ascii_text_are_preserved():
+    text = "Résumé — 你好 😀 ₹500\n\nnext line"
+    assert redact(text) == text
 
 
 # ---- wiring: classify must redact subject and body, but not the sender ----
