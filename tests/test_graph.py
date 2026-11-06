@@ -117,3 +117,12 @@ def test_empty_inbox_gives_no_proposals_and_no_llm_calls():
     state, _ = run([], chain)
     assert state["proposals"] == []
     assert chain.seen_subjects == []
+
+
+def test_starred_flag_is_carried_into_the_proposal():
+    starred = Email(
+        id="1", thread_id="t1", sender="a@x.com", subject="s", label_ids=["STARRED"]
+    )
+    plain = make_email("2", "b@x.com")
+    state, _ = run([starred, plain], FakeChain())
+    assert [p.starred for p in state["proposals"]] == [True, False]

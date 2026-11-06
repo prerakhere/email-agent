@@ -68,6 +68,7 @@ class Proposal(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
     source: Literal["rule", "llm"]
+    starred: bool = False  # starred mail is never moved out of the inbox
 
 
 class Bill(BaseModel):

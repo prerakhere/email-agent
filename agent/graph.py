@@ -66,6 +66,7 @@ def build_graph(
                     confidence=c.confidence,
                     reason=c.reason,
                     source=c.source,
+                    starred=email.is_starred,
                 )
             )
         return {"proposals": proposals}
