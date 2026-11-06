@@ -2,6 +2,8 @@ import base64
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from agent.gmail_client import GmailClient, message_to_email
 
 
@@ -223,3 +225,30 @@ def test_fetch_senders_skips_messages_without_a_from_header():
 
 def test_fetch_senders_for_an_empty_label_returns_empty_list():
     assert GmailClient(fake_service([{}], {})).fetch_senders("L") == []
+
+
+def labels_api(service):
+    return service.users.return_value.labels.return_value
+
+
+def test_ensure_label_returns_existing_id_without_creating():
+    labels = [{"id": "Label_1", "name": "Agent/Job-Alerts", "type": "user"}]
+    service = fake_service([], {}, labels=labels)
+    assert GmailClient(service).ensure_label("Agent/Job-Alerts") == "Label_1"
+    labels_api(service).create.assert_not_called()
+
+
+def test_ensure_label_creates_a_missing_agent_label_and_returns_its_id():
+    service = fake_service([], {}, labels=[])
+    labels_api(service).create.return_value.execute.return_value = {"id": "Label_9"}
+    assert GmailClient(service).ensure_label("Agent/Job-Alerts") == "Label_9"
+    labels_api(service).create.assert_called_once()
+    body = labels_api(service).create.call_args.kwargs["body"]
+    assert body["name"] == "Agent/Job-Alerts"
+
+
+def test_ensure_label_refuses_to_create_a_label_outside_agent_namespace():
+    service = fake_service([], {}, labels=[])
+    with pytest.raises(ValueError, match="Agent/"):
+        GmailClient(service).ensure_label("Random Folder")
+    labels_api(service).create.assert_not_called()

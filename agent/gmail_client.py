@@ -11,6 +11,7 @@ from agent.schemas import Email
 
 BODY_PREVIEW_CHARS = 2000
 PAGE_SIZE = 100
+AGENT_PREFIX = "Agent/"
 
 
 class _TextExtractor(HTMLParser):
@@ -98,6 +99,33 @@ class GmailClient:
             for x in response.get("labels", [])
             if x["type"] == "user"
         }
+
+    def ensure_label(self, name: str) -> str:
+        """Id of the label `name`; creates it only if missing AND it lives under Agent/.
+
+        Refusing other names is the code-level guard for "the agent never invents labels".
+        """
+        for existing, label_id in self.label_ids_by_name().items():
+            if existing.lower() == name.lower():
+                return label_id
+        if not name.startswith(AGENT_PREFIX):
+            raise ValueError(
+                f"Refusing to create label {name!r}: only {AGENT_PREFIX}* is allowed"
+            )
+        created = (
+            self._service.users()
+            .labels()
+            .create(
+                userId="me",
+                body={
+                    "name": name,
+                    "labelListVisibility": "labelShow",
+                    "messageListVisibility": "show",
+                },
+            )
+            .execute()
+        )
+        return created["id"]
 
     def _list_message_ids(self, max_results: int, **query) -> list[str]:
         """Message ids matching `query` (messages.list kwargs), following pagination."""
