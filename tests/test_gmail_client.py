@@ -274,3 +274,13 @@ def test_move_to_label_never_sends_a_delete_or_trash_change():
     ]
     assert set(body["removeLabelIds"]) == {"INBOX"}
     assert "TRASH" not in body["addLabelIds"]
+
+
+def test_add_label_only_adds_and_never_removes_anything():
+    service = fake_service([], {})
+    GmailClient(service).add_label("m1", "Label_5")
+    modify = service.users.return_value.messages.return_value.modify
+    modify.assert_called_once_with(
+        userId="me", id="m1", body={"addLabelIds": ["Label_5"]}
+    )
+    modify.return_value.execute.assert_called_once()

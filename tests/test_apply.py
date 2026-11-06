@@ -43,6 +43,7 @@ def test_real_run_moves_each_planned_email_into_its_label():
         [proposal("m1"), proposal("m2", Category.NEWSLETTERS, "Newsletters")],
         gmail,
         dry_run=False,
+        keep_in_inbox=False,
     )
     assert [p.email_id for p in result.moved] == ["m1", "m2"]
     gmail.move_to_label.assert_any_call("m1", "id:Agent/Job-Alerts")
@@ -55,6 +56,7 @@ def test_important_mail_is_never_moved():
         [proposal(category=Category.IMPORTANT, label="Agent/Important")],
         gmail,
         dry_run=False,
+        keep_in_inbox=False,
     )
     assert result.moved == [] and result.planned == []
     assert "important" in result.skipped[0][1].lower()
@@ -67,6 +69,7 @@ def test_needs_review_mail_stays_in_the_inbox():
         [proposal(category=Category.NEEDS_REVIEW, label="Agent/Needs-Review")],
         gmail,
         dry_run=False,
+        keep_in_inbox=False,
     )
     assert result.moved == []
     gmail.move_to_label.assert_not_called()
@@ -74,7 +77,9 @@ def test_needs_review_mail_stays_in_the_inbox():
 
 def test_starred_mail_is_never_moved():
     gmail = fake_gmail()
-    result = apply_proposals([proposal(starred=True)], gmail, dry_run=False)
+    result = apply_proposals(
+        [proposal(starred=True)], gmail, dry_run=False, keep_in_inbox=False
+    )
     assert result.moved == []
     assert "starred" in result.skipped[0][1].lower()
     gmail.move_to_label.assert_not_called()
@@ -83,7 +88,10 @@ def test_starred_mail_is_never_moved():
 def test_each_label_is_looked_up_or_created_only_once():
     gmail = fake_gmail()
     apply_proposals(
-        [proposal("m1"), proposal("m2"), proposal("m3")], gmail, dry_run=False
+        [proposal("m1"), proposal("m2"), proposal("m3")],
+        gmail,
+        dry_run=False,
+        keep_in_inbox=False,
     )
     gmail.ensure_label.assert_called_once_with("Agent/Job-Alerts")
     assert gmail.move_to_label.call_count == 3
@@ -95,6 +103,7 @@ def test_skipped_mail_does_not_create_its_label():
         [proposal(category=Category.IMPORTANT, label="Agent/Important")],
         gmail,
         dry_run=False,
+        keep_in_inbox=False,
     )
     gmail.ensure_label.assert_not_called()
 
@@ -103,3 +112,32 @@ def test_dry_run_is_the_default():
     gmail = fake_gmail()
     apply_proposals([proposal()], gmail)
     gmail.move_to_label.assert_not_called()
+
+
+def test_keep_in_inbox_is_the_default_and_only_adds_labels():
+    gmail = fake_gmail()
+    result = apply_proposals([proposal()], gmail, dry_run=False)
+    gmail.add_label.assert_called_once_with("m1", "id:Agent/Job-Alerts")
+    gmail.move_to_label.assert_not_called()
+    assert result.keep_in_inbox is True
+    assert [p.email_id for p in result.moved] == ["m1"]
+
+
+def test_keep_in_inbox_labels_important_needs_review_and_starred_too():
+    gmail = fake_gmail()
+    mail = [
+        proposal("m1", Category.IMPORTANT, "Agent/Important"),
+        proposal("m2", Category.NEEDS_REVIEW, "Agent/Needs-Review"),
+        proposal("m3", starred=True),
+    ]
+    result = apply_proposals(mail, gmail, dry_run=False)
+    assert result.skipped == []
+    assert gmail.add_label.call_count == 3
+
+
+def test_keep_in_inbox_dry_run_makes_no_gmail_calls():
+    gmail = fake_gmail()
+    result = apply_proposals([proposal()], gmail, dry_run=True)
+    assert len(result.planned) == 1
+    gmail.ensure_label.assert_not_called()
+    gmail.add_label.assert_not_called()

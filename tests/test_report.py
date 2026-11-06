@@ -1,4 +1,5 @@
-from agent.report import format_table
+from agent.apply import ApplyResult
+from agent.report import format_apply_report, format_table
 from agent.schemas import Category, Proposal
 
 
@@ -52,3 +53,40 @@ def test_summary_counts_categories_and_rule_decisions():
     assert "2 decided by rules" in summary
     assert "newsletters=2" in summary
     assert "promotions=1" in summary
+
+
+def test_apply_report_lists_moves_and_keeps_with_reasons():
+    move = make_proposal(email_id="1", subject="Weekly digest", label="Newsletters")
+    keep = make_proposal(email_id="2", subject="Your interview")
+    result = ApplyResult(planned=[move], skipped=[(keep, "important mail stays")])
+    text = format_apply_report(result, dry_run=True)
+    assert "MOVE" in text and "Weekly digest" in text and "Newsletters" in text
+    assert (
+        "KEEP" in text and "Your interview" in text and "important mail stays" in text
+    )
+
+
+def test_apply_report_dry_run_says_nothing_was_changed():
+    result = ApplyResult(planned=[make_proposal()])
+    text = format_apply_report(result, dry_run=True)
+    assert "DRY RUN" in text and "1 would move" in text
+
+
+def test_apply_report_real_run_says_how_many_were_moved():
+    p = make_proposal()
+    result = ApplyResult(planned=[p], moved=[p])
+    text = format_apply_report(result, dry_run=False)
+    assert "1 moved" in text and "DRY RUN" not in text
+
+
+def test_apply_report_with_nothing_to_do():
+    assert "Nothing to move" in format_apply_report(ApplyResult(), dry_run=True)
+
+
+def test_apply_report_in_keep_mode_says_label_and_that_mail_stays():
+    p = make_proposal(label="Newsletters")
+    planned = ApplyResult(planned=[p], keep_in_inbox=True)
+    text = format_apply_report(planned, dry_run=True)
+    assert "LABEL" in text and "MOVE" not in text and "1 would be labelled" in text
+    done = ApplyResult(planned=[p], moved=[p], keep_in_inbox=True)
+    assert "1 labelled" in format_apply_report(done, dry_run=False)

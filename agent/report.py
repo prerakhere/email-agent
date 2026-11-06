@@ -7,6 +7,7 @@ text that would be sent to the LLM (never the original body), so it can be inspe
 from collections import Counter
 from collections.abc import Mapping
 
+from agent.apply import ApplyResult
 from agent.nodes.classify import build_inputs
 from agent.nodes.prefilter import prefilter
 from agent.schemas import Category, Email, Proposal
@@ -66,3 +67,35 @@ def format_sent_preview(emails: list[Email], rules: Mapping[str, Category]) -> s
         f"{skipped} matched a rule and would not be sent. Exact (redacted) content:"
     )
     return header + "\n\n" + "\n\n".join(blocks)
+
+
+def format_apply_report(result: ApplyResult, dry_run: bool) -> str:
+    """What apply would do (dry run) or did: one LABEL/MOVE/KEEP line per email, then a summary."""
+    if not result.planned and not result.skipped:
+        return "Nothing to move."
+    keep = result.keep_in_inbox
+    verb = "LABEL" if keep else "MOVE"
+    lines = []
+    for p in result.planned:
+        lines.append(
+            f"{verb:<5} {_fit(p.sender, 28)}  {_fit(p.subject, 34)}  -> {p.label}"
+        )
+    for p, why in result.skipped:
+        lines.append(f"KEEP  {_fit(p.sender, 28)}  {_fit(p.subject, 34)}  ({why})")
+    if keep:
+        tail = "All mail stays in the inbox."
+        if dry_run:
+            summary = (
+                f"DRY RUN: nothing was changed. "
+                f"{len(result.planned)} would be labelled. {tail}"
+            )
+        else:
+            summary = f"{len(result.moved)} labelled. {tail}"
+    elif dry_run:
+        summary = (
+            f"DRY RUN: nothing was changed. {len(result.planned)} would move, "
+            f"{len(result.skipped)} would stay in the inbox."
+        )
+    else:
+        summary = f"{len(result.moved)} moved, {len(result.skipped)} left in the inbox."
+    return "\n".join(lines) + "\n\n" + summary

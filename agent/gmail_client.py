@@ -127,6 +127,12 @@ class GmailClient:
         )
         return created["id"]
 
+    def add_label(self, email_id: str, label_id: str) -> None:
+        """Label one message and change nothing else: it stays in the inbox, unread state intact."""
+        self._service.users().messages().modify(
+            userId="me", id=email_id, body={"addLabelIds": [label_id]}
+        ).execute()
+
     def move_to_label(self, email_id: str, label_id: str) -> None:
         """File one message: add `label_id` and remove INBOX in a single call.
 
