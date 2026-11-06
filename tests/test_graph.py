@@ -10,9 +10,10 @@ def make_email(mid: str, sender: str, subject: str = "s") -> Email:
 
 
 class FakeGmail:
-    def __init__(self, emails, labels=()):
+    def __init__(self, emails, labels=(), label_ids=None):
         self._emails = emails
         self._labels = list(labels)
+        self._label_ids = label_ids or {}
         self.fetch_args = None
 
     def fetch_recent(self, days, max_results=100):
@@ -21,6 +22,9 @@ class FakeGmail:
 
     def list_label_names(self):
         return self._labels
+
+    def label_ids_by_name(self):
+        return self._label_ids
 
 
 class FakeChain:
@@ -41,8 +45,8 @@ class FakeChain:
 RULES = {"bytebytego.com": Category.NEWSLETTERS}
 
 
-def run(emails, chain, rules=RULES, labels=(), **kwargs):
-    gmail = FakeGmail(emails, labels)
+def run(emails, chain, rules=RULES, labels=(), label_ids=None, **kwargs):
+    gmail = FakeGmail(emails, labels, label_ids)
     graph = build_graph(gmail, rules, chain.runnable, **kwargs)
     return graph.invoke({}), gmail
 
@@ -126,3 +130,36 @@ def test_starred_flag_is_carried_into_the_proposal():
     plain = make_email("2", "b@x.com")
     state, _ = run([starred, plain], FakeChain())
     assert [p.starred for p in state["proposals"]] == [True, False]
+
+
+def test_mail_that_already_has_a_user_label_is_skipped_entirely():
+    done = Email(
+        id="1",
+        thread_id="t1",
+        sender="a@x.com",
+        subject="old",
+        label_ids=["INBOX", "Label_7"],
+    )
+    fresh = Email(
+        id="2",
+        thread_id="t2",
+        sender="b@x.com",
+        subject="new",
+        label_ids=["INBOX", "UNREAD"],
+    )
+    chain = FakeChain()
+    state, _ = run([done, fresh], chain, label_ids={"Agent/Job-Alerts": "Label_7"})
+    assert chain.seen_subjects == ["new"]
+    assert [p.email_id for p in state["proposals"]] == ["2"]
+
+
+def test_mail_with_only_system_labels_is_still_processed():
+    email = Email(
+        id="1",
+        thread_id="t1",
+        sender="a@x.com",
+        subject="s",
+        label_ids=["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"],
+    )
+    state, _ = run([email], FakeChain(), label_ids={"Newsletters": "Label_1"})
+    assert len(state["proposals"]) == 1

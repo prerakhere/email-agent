@@ -31,8 +31,12 @@ def build_graph(
     max_results: int = 100,
 ):
     def fetch_node(state: AgentState) -> dict:
+        # Mail that already carries a user label (ours or the user's own) is already filed:
+        # skip it so it is not re-classified on every run while it stays in the inbox.
+        filed_ids = set(gmail.label_ids_by_name().values())
+        fetched = gmail.fetch_recent(days=days, max_results=max_results)
         return {
-            "emails": gmail.fetch_recent(days=days, max_results=max_results),
+            "emails": [e for e in fetched if not filed_ids & set(e.label_ids)],
             "existing_labels": gmail.list_label_names(),
         }
 
