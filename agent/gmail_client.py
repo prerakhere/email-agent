@@ -127,6 +127,18 @@ class GmailClient:
         )
         return created["id"]
 
+    def move_to_label(self, email_id: str, label_id: str) -> None:
+        """File one message: add `label_id` and remove INBOX in a single call.
+
+        Mechanics only. Never touches TRASH, so mail is labelled, never deleted. Which mail
+        may be moved at all (not Important/starred) is decided by the caller.
+        """
+        self._service.users().messages().modify(
+            userId="me",
+            id=email_id,
+            body={"addLabelIds": [label_id], "removeLabelIds": ["INBOX"]},
+        ).execute()
+
     def _list_message_ids(self, max_results: int, **query) -> list[str]:
         """Message ids matching `query` (messages.list kwargs), following pagination."""
         ids: list[str] = []

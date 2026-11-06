@@ -252,3 +252,25 @@ def test_ensure_label_refuses_to_create_a_label_outside_agent_namespace():
     with pytest.raises(ValueError, match="Agent/"):
         GmailClient(service).ensure_label("Random Folder")
     labels_api(service).create.assert_not_called()
+
+
+def test_move_to_label_adds_label_and_removes_inbox_in_one_call():
+    service = fake_service([], {})
+    GmailClient(service).move_to_label("m1", "Label_5")
+    modify = service.users.return_value.messages.return_value.modify
+    modify.assert_called_once_with(
+        userId="me",
+        id="m1",
+        body={"addLabelIds": ["Label_5"], "removeLabelIds": ["INBOX"]},
+    )
+    modify.return_value.execute.assert_called_once()
+
+
+def test_move_to_label_never_sends_a_delete_or_trash_change():
+    service = fake_service([], {})
+    GmailClient(service).move_to_label("m1", "Label_5")
+    body = service.users.return_value.messages.return_value.modify.call_args.kwargs[
+        "body"
+    ]
+    assert set(body["removeLabelIds"]) == {"INBOX"}
+    assert "TRASH" not in body["addLabelIds"]
