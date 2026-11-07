@@ -9,11 +9,11 @@ once per ten emails instead of once per email. Answers are matched back to email
 each <email id=N> block, never by position, so a skipped or repeated answer can't mislabel mail.
 """
 
-import openai
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
+from agent.batching import run_in_batches
 from agent.redact import redact
 from agent.schemas import Category, Classification, Email
 
@@ -126,14 +126,6 @@ def _no_answer() -> Classification:
     )
 
 
-def _is_content_filter_error(error: BaseException) -> bool:
-    """Azure rejects a request whose text trips its content filter: HTTP 400, code content_filter."""
-    return (
-        isinstance(error, openai.BadRequestError)
-        and getattr(error, "code", None) == "content_filter"
-    )
-
-
 def _blocked() -> Classification:
     return Classification(
         category=Category.NEEDS_REVIEW,
@@ -174,39 +166,16 @@ def classify_many(
 ) -> list[Classification]:
     """Classify emails `batch_size` per request, a few requests at a time, in the same order.
 
-    `chain.batch` is LangChain's built-in way to run one chain over many inputs in parallel;
-    `max_concurrency` caps how many run at once to stay inside the rate limit.
-
-    If Azure's content filter rejects a whole request (one flagged email would otherwise sink
-    its nine neighbours), that batch is retried one email at a time; an email still rejected on
-    its own becomes Needs-Review. Any other error (e.g. a rate limit that outlasted the retries)
-    is raised, not hidden.
+    Batching, the concurrency cap and the content-filter retry live in agent.batching: if Azure
+    rejects a whole request, that batch is retried one email at a time and an email still rejected
+    alone becomes Needs-Review.
     """
-    if not emails:
-        return []
-    config = {"max_concurrency": max_concurrency}
-    chunks = [emails[i : i + batch_size] for i in range(0, len(emails), batch_size)]
-    replies = chain.batch(
-        [_request(chunk) for chunk in chunks], config=config, return_exceptions=True
+    return run_in_batches(
+        emails,
+        chain,
+        make_request=_request,
+        from_reply=lambda chunk, reply: _from_reply(chunk, reply, threshold),
+        on_blocked=lambda _email: _blocked(),
+        batch_size=batch_size,
+        max_concurrency=max_concurrency,
     )
-
-    results: list[Classification] = []
-    for chunk, reply in zip(chunks, replies, strict=True):
-        if not isinstance(reply, BaseException):
-            results.extend(_from_reply(chunk, reply, threshold))
-            continue
-        if not _is_content_filter_error(reply):
-            raise reply
-        singles = chain.batch(
-            [_request([email]) for email in chunk],
-            config=config,
-            return_exceptions=True,
-        )
-        for email, single in zip(chunk, singles, strict=True):
-            if not isinstance(single, BaseException):
-                results.extend(_from_reply([email], single, threshold))
-            elif _is_content_filter_error(single):
-                results.append(_blocked())
-            else:
-                raise single
-    return results
