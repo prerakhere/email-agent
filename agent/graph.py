@@ -1,4 +1,6 @@
-"""The LangGraph pipeline (Phase 1, linear): fetch -> prefilter -> classify -> propose.
+"""The LangGraph pipeline: fetch -> prefilter -> classify -> propose, then (only if there are
+bills/receipts and an extractor was given) extract. The graph never writes anywhere: acting on
+its output (labelling, logging to the sheet) is a separate, lock-guarded step.
 
 State is one shared typed dict. Each node is a plain function that returns only the keys it
 changed; LangGraph merges those into the state. Dependencies (Gmail client, rules, LLM chain)
@@ -12,8 +14,11 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.labels import resolve_label
 from agent.nodes.classify import classify
+from agent.nodes.extract import extract_bill
 from agent.nodes.prefilter import prefilter
-from agent.schemas import Category, Classification, Email, Proposal
+from agent.schemas import Bill, Category, Classification, Email, Proposal
+
+BILLING = {Category.BILLS, Category.RECEIPTS}
 
 
 class AgentState(TypedDict, total=False):
@@ -21,6 +26,8 @@ class AgentState(TypedDict, total=False):
     existing_labels: list[str]
     classifications: dict[str, Classification]  # keyed by email id
     proposals: list[Proposal]
+    # keyed by email id; only bills/receipts with a usable amount
+    bills: dict[str, Bill]
 
 
 def build_graph(
@@ -29,6 +36,7 @@ def build_graph(
     chain: Runnable,
     days: int = 3,
     max_results: int = 100,
+    extractor: Runnable | None = None,
 ):
     def fetch_node(state: AgentState) -> dict:
         # Mail that already carries a user label (ours or the user's own) is already filed:
@@ -75,6 +83,22 @@ def build_graph(
             )
         return {"proposals": proposals}
 
+    def extract_node(state: AgentState) -> dict:
+        bills = {}
+        for email in state["emails"]:
+            if state["classifications"][email.id].category in BILLING:
+                bill = extract_bill(email, extractor)
+                if bill is not None:  # None = no usable amount: nothing safe to log
+                    bills[email.id] = bill
+        return {"bills": bills}
+
+    def route_after_propose(state: AgentState) -> str:
+        """Conditional edge: the returned string names the next node."""
+        has_billing_mail = any(
+            state["classifications"][e.id].category in BILLING for e in state["emails"]
+        )
+        return "extract" if extractor is not None and has_billing_mail else END
+
     graph = StateGraph(AgentState)
     graph.add_node("fetch", fetch_node)
     graph.add_node("prefilter", prefilter_node)
@@ -84,5 +108,17 @@ def build_graph(
     graph.add_edge("fetch", "prefilter")
     graph.add_edge("prefilter", "classify")
     graph.add_edge("classify", "propose")
-    graph.add_edge("propose", END)
+    graph.add_node("extract", extract_node)
+    graph.add_conditional_edges("propose", route_after_propose, ["extract", END])
+    graph.add_edge("extract", END)
     return graph.compile()
+
+
+def collect_bill_items(state: AgentState) -> list[tuple[Email, Category, Bill]]:
+    """(email, category, bill) for every extracted bill/receipt, in email order."""
+    bills = state.get("bills", {})
+    return [
+        (email, state["classifications"][email.id].category, bills[email.id])
+        for email in state["emails"]
+        if email.id in bills
+    ]

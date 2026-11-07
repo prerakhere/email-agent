@@ -1,7 +1,8 @@
 from langchain_core.runnables import RunnableLambda
 
-from agent.graph import build_graph
+from agent.graph import build_graph, collect_bill_items
 from agent.nodes.classify import LLMClassification
+from agent.nodes.extract import LLMBill
 from agent.schemas import Category, Email
 
 
@@ -163,3 +164,108 @@ def test_mail_with_only_system_labels_is_still_processed():
     )
     state, _ = run([email], FakeChain(), label_ids={"Newsletters": "Label_1"})
     assert len(state["proposals"]) == 1
+
+
+class FakeExtractor:
+    """Stands in for the extraction chain. Records which emails reached it."""
+
+    def __init__(self, amount=1250.0):
+        self.seen_subjects: list[str] = []
+        self._answer = LLMBill(
+            vendor="HDFC Bank", amount=amount, currency="INR", confidence=0.9
+        )
+        self.runnable = RunnableLambda(self._invoke)
+
+    def _invoke(self, inputs):
+        self.seen_subjects.append(inputs["subject"])
+        return self._answer
+
+
+BANK_RULES = {"stmt@bank.com": Category.BILLS, "shop@store.com": Category.RECEIPTS}
+
+
+def test_bill_mail_is_extracted_into_state_bills():
+    extractor = FakeExtractor()
+    state, _ = run(
+        [make_email("1", "stmt@bank.com", "Statement")],
+        FakeChain(),
+        rules=BANK_RULES,
+        extractor=extractor.runnable,
+    )
+    assert extractor.seen_subjects == ["Statement"]
+    assert state["bills"]["1"].vendor == "HDFC Bank"
+    assert str(state["bills"]["1"].amount) == "1250.0"
+
+
+def test_receipts_are_extracted_too():
+    extractor = FakeExtractor()
+    state, _ = run(
+        [make_email("1", "shop@store.com", "Your order")],
+        FakeChain(),
+        rules=BANK_RULES,
+        extractor=extractor.runnable,
+    )
+    assert "1" in state["bills"]
+
+
+def test_other_categories_never_reach_the_extractor():
+    extractor = FakeExtractor()
+    state, _ = run(
+        [make_email("1", "deals@shop.com", "sale")],
+        FakeChain(Category.PROMOTIONS, 0.9),
+        extractor=extractor.runnable,
+    )
+    assert extractor.seen_subjects == []
+    assert state.get("bills", {}) == {}
+
+
+def test_low_confidence_bill_is_needs_review_and_not_extracted():
+    extractor = FakeExtractor()
+    state, _ = run(
+        [make_email("1", "x@other.com", "maybe a bill")],
+        FakeChain(Category.BILLS, 0.4),
+        extractor=extractor.runnable,
+    )
+    assert extractor.seen_subjects == []
+    assert state.get("bills", {}) == {}
+
+
+def test_a_bill_mail_with_no_usable_amount_is_left_out_of_bills():
+    extractor = FakeExtractor(amount=None)
+    state, _ = run(
+        [make_email("1", "stmt@bank.com", "Reminder")],
+        FakeChain(),
+        rules=BANK_RULES,
+        extractor=extractor.runnable,
+    )
+    assert extractor.seen_subjects == ["Reminder"]
+    assert state["bills"] == {}
+
+
+def test_without_an_extractor_the_graph_behaves_as_before():
+    state, _ = run(
+        [make_email("1", "stmt@bank.com", "Statement")], FakeChain(), rules=BANK_RULES
+    )
+    assert state["proposals"][0].category == Category.BILLS
+    assert "bills" not in state
+
+
+def test_collect_bill_items_pairs_email_category_and_bill_in_email_order():
+    extractor = FakeExtractor()
+    emails = [
+        make_email("1", "deals@shop.com", "sale"),
+        make_email("2", "shop@store.com", "Your order"),
+        make_email("3", "stmt@bank.com", "Statement"),
+    ]
+    state, _ = run(
+        emails,
+        FakeChain(Category.PROMOTIONS, 0.9),
+        rules=BANK_RULES,
+        extractor=extractor.runnable,
+    )
+    items = collect_bill_items(state)
+    assert [(e.id, c) for e, c, _ in items] == [
+        ("2", Category.RECEIPTS),
+        ("3", Category.BILLS),
+    ]
+    assert all(bill.currency == "INR" for _, _, bill in items)
