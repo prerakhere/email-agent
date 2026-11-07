@@ -10,7 +10,9 @@ from html.parser import HTMLParser
 
 from agent.schemas import Email
 
-BODY_PREVIEW_CHARS = 2000
+BODY_PREVIEW_CHARS = (
+    3000  # the most body text kept per email; sections choose how much to use
+)
 PAGE_SIZE = 100
 AGENT_PREFIX = "Agent/"
 # Gmail rate-limits bursts of message reads (403/429). Google's client retries with backoff

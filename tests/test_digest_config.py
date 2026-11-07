@@ -6,6 +6,7 @@ from agent.digest_config import (
     DigestSection,
     load_digest_config,
 )
+from agent.gmail_client import BODY_PREVIEW_CHARS
 from agent.schemas import Category
 
 
@@ -136,3 +137,28 @@ def test_a_file_that_is_not_valid_toml_gives_a_clear_error(tmp_path):
     path.write_text("this is = = not toml [[")
     with pytest.raises(ValueError, match="not valid TOML"):
         load_digest_config(path)
+
+
+def test_body_size_defaults_to_1500_and_newsletters_get_more():
+    assert DigestSection(**section()).body_chars == 1500
+    assert DEFAULT_CONFIG.section_for(Category.NEWSLETTERS).body_chars == 3000
+    assert DEFAULT_CONFIG.section_for(Category.IMPORTANT).body_chars == 1500
+
+
+def test_no_section_asks_for_more_text_than_the_fetch_keeps():
+    assert BODY_PREVIEW_CHARS == 3000
+    assert all(s.body_chars <= BODY_PREVIEW_CHARS for s in DEFAULT_CONFIG.sections)
+
+
+@pytest.mark.parametrize("bad", [0, 199, BODY_PREVIEW_CHARS + 1])
+def test_a_silly_body_size_is_rejected(bad):
+    with pytest.raises(ValueError):
+        DigestSection(**section(body_chars=bad))
+
+
+def test_body_size_can_be_set_in_the_toml_file(tmp_path):
+    path = tmp_path / "digest.toml"
+    path.write_text(
+        '[[sections]]\ntitle = "Reading"\ncategories = ["newsletters"]\nbody_chars = 2500\n'
+    )
+    assert load_digest_config(path).sections[0].body_chars == 2500

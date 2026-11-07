@@ -106,7 +106,7 @@ def test_message_without_body_gives_empty_preview():
 
 
 def test_very_long_body_is_capped():
-    assert len(message_to_email(make_message(data="x" * 10_000)).body_preview) == 2000
+    assert len(message_to_email(make_message(data="x" * 10_000)).body_preview) == 3000
 
 
 # ---- GmailClient with a fake Google service (no network) ----

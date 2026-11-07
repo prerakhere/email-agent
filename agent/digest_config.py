@@ -13,6 +13,7 @@ To change the digest, copy the defaults into `digest.toml` at the repo root (git
     style = "List action points and deadlines."
     mode = "per_email"     # or "group"
     max_items = 10
+    body_chars = 1500      # how much of each email the model reads (200 to 3000)
 
 With no `digest.toml`, DEFAULT_CONFIG is used. Adding a brand-new CATEGORY of mail is a small
 code change (agent/schemas.py); everything else is just this file.
@@ -24,6 +25,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from agent.gmail_client import BODY_PREVIEW_CHARS
 from agent.schemas import Category
 
 
@@ -33,6 +35,8 @@ class DigestSection(BaseModel):
     style: str = ""  # how the model should summarise this section
     mode: Literal["per_email", "group"] = "per_email"
     max_items: int = Field(default=10, ge=1)
+    # How much of each email's body the model reads (after redaction): more costs more tokens.
+    body_chars: int = Field(default=1500, ge=200, le=BODY_PREVIEW_CHARS)
 
 
 class DigestConfig(BaseModel):
@@ -82,6 +86,7 @@ DEFAULT_CONFIG = DigestConfig(
             title="Newsletters",
             categories=[Category.NEWSLETTERS],
             style="Two or three key points. Skip pure promotion.",
+            body_chars=3000,  # the key points of a newsletter sit lower down
         ),
         DigestSection(
             title="Promotions",
