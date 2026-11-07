@@ -1,4 +1,5 @@
 import base64
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -18,6 +19,7 @@ def make_message(
     mime="text/plain",
     data="hello",
     labels=None,
+    internal_date=None,
 ) -> dict:
     headers = headers or [
         {"name": "From", "value": "Shop <deals@shop.com>"},
@@ -30,12 +32,15 @@ def make_message(
             "mimeType": "multipart/alternative",
             "parts": body_parts,
         }
-    return {
+    message = {
         "id": mid,
         "threadId": f"t-{mid}",
         "labelIds": labels or ["INBOX"],
         "payload": payload,
     }
+    if internal_date is not None:
+        message["internalDate"] = internal_date
+    return message
 
 
 def test_message_to_email_reads_headers_ids_and_labels():
@@ -284,3 +289,12 @@ def test_add_label_only_adds_and_never_removes_anything():
         userId="me", id="m1", body={"addLabelIds": ["Label_5"]}
     )
     modify.return_value.execute.assert_called_once()
+
+
+def test_received_at_comes_from_gmail_internal_date_in_utc():
+    email = message_to_email(make_message(internal_date="1700000000000"))
+    assert email.received_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+
+
+def test_missing_internal_date_gives_no_received_at():
+    assert message_to_email(make_message()).received_at is None

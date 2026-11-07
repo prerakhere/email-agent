@@ -5,6 +5,7 @@ Nothing here prints or logs message content.
 """
 
 import base64
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 
 from agent.schemas import Email
@@ -67,6 +68,14 @@ def _extract_body(payload: dict) -> str:
     return ""
 
 
+def _received_at(message: dict) -> datetime | None:
+    """Gmail's own arrival time (internalDate, milliseconds since epoch), as UTC."""
+    millis = message.get("internalDate")
+    if millis is None:
+        return None
+    return datetime.fromtimestamp(int(millis) / 1000, tz=UTC)
+
+
 def message_to_email(message: dict) -> Email:
     """Convert a Gmail API `format=full` message dict into our Email model."""
     payload = message.get("payload", {})
@@ -79,6 +88,7 @@ def message_to_email(message: dict) -> Email:
         body_preview=_extract_body(payload),
         list_unsubscribe="list-unsubscribe" in headers,
         label_ids=message.get("labelIds", []),
+        received_at=_received_at(message),
     )
 
 

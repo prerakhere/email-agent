@@ -1,6 +1,6 @@
 """Core data models shared by every graph node."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from email.utils import parseaddr
 from enum import StrEnum
@@ -28,6 +28,7 @@ class Email(BaseModel):
     body_preview: str = ""
     list_unsubscribe: bool = False
     label_ids: list[str] = Field(default_factory=list)
+    received_at: datetime | None = None  # when Gmail received it (UTC)
 
     @computed_field
     @property
