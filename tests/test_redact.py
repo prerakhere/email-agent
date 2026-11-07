@@ -1,6 +1,6 @@
 from langchain_core.runnables import RunnableLambda
 
-from agent.nodes.classify import LLMClassification, classify
+from agent.nodes.classify import LLMBatch, LLMItem, classify_many
 from agent.redact import redact
 from agent.schemas import Category, Email
 
@@ -92,16 +92,20 @@ def test_newlines_and_normal_non_ascii_text_are_preserved():
     assert redact(text) == text
 
 
-# ---- wiring: classify must redact subject and body, but not the sender ----
+# ---- wiring: classification must redact subject and body, but not the sender ----
 
 
 def test_classify_sends_redacted_subject_and_body_but_real_sender():
     seen = {}
 
     def capture(inputs):
-        seen.update(inputs)
-        return LLMClassification(
-            category=Category.NOTIFICATIONS, confidence=0.9, reason="r"
+        seen["text"] = inputs["emails"]
+        return LLMBatch(
+            items=[
+                LLMItem(
+                    index=1, category=Category.NOTIFICATIONS, confidence=0.9, reason="r"
+                )
+            ]
         )
 
     email = Email(
@@ -111,10 +115,10 @@ def test_classify_sends_redacted_subject_and_body_but_real_sender():
         subject="Your OTP is 4821",
         body_preview="Card 4111 1111 1111 1111 see https://bank.com/x?t=1",
     )
-    classify(email, RunnableLambda(capture))
-    assert seen["sender"] == "Bank <alerts@bank.com>"
-    assert seen["subject"] == "Your OTP is [REDACTED]"
-    assert seen["body_preview"] == "Card [NUMBER] see [LINK:bank.com]"
+    classify_many([email], RunnableLambda(capture))
+    assert "From: Bank <alerts@bank.com>" in seen["text"]
+    assert "Subject: Your OTP is [REDACTED]" in seen["text"]
+    assert "Card [NUMBER] see [LINK:bank.com]" in seen["text"]
 
 
 RUPEE = chr(0x20B9)

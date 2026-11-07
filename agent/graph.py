@@ -13,7 +13,7 @@ from langchain_core.runnables import Runnable
 from langgraph.graph import END, START, StateGraph
 
 from agent.labels import resolve_label
-from agent.nodes.classify import classify
+from agent.nodes.classify import BATCH_SIZE, DEFAULT_CONCURRENCY, classify_many
 from agent.nodes.extract import extract_bill
 from agent.nodes.prefilter import prefilter
 from agent.schemas import Bill, Category, Classification, Email, Proposal
@@ -37,6 +37,8 @@ def build_graph(
     days: int = 3,
     max_results: int = 100,
     extractor: Runnable | None = None,
+    max_concurrency: int = DEFAULT_CONCURRENCY,
+    batch_size: int = BATCH_SIZE,
 ):
     def fetch_node(state: AgentState) -> dict:
         # Mail that already carries a user label (ours or the user's own) is already filed:
@@ -57,11 +59,16 @@ def build_graph(
         return {"classifications": decided}
 
     def classify_node(state: AgentState) -> dict:
-        # A returned key REPLACES the old value, so return the merged dict.
+        # Only mail no rule decided goes to the model, several emails per request (a 100+ mail day
+        # would otherwise hit the request-rate limit). A returned key REPLACES the old value, so we return the
+        # merged dict.
         classifications = dict(state["classifications"])
-        for email in state["emails"]:
-            if email.id not in classifications:  # only mail no rule decided
-                classifications[email.id] = classify(email, chain)
+        pending = [e for e in state["emails"] if e.id not in classifications]
+        results = classify_many(
+            pending, chain, batch_size=batch_size, max_concurrency=max_concurrency
+        )
+        for email, result in zip(pending, results, strict=True):
+            classifications[email.id] = result
         return {"classifications": classifications}
 
     def propose_node(state: AgentState) -> dict:

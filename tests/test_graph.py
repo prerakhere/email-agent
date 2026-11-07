@@ -1,7 +1,9 @@
+import re
+
 from langchain_core.runnables import RunnableLambda
 
 from agent.graph import build_graph, collect_bill_items
-from agent.nodes.classify import LLMClassification
+from agent.nodes.classify import DEFAULT_CONCURRENCY, LLMBatch, LLMItem
 from agent.nodes.extract import LLMBill
 from agent.schemas import Category, Email
 
@@ -29,18 +31,28 @@ class FakeGmail:
 
 
 class FakeChain:
-    """Stands in for prompt|llm. Records which emails reached the LLM."""
+    """Stands in for prompt|llm. Answers every email it is sent and records their subjects."""
 
     def __init__(self, category=Category.PROMOTIONS, confidence=0.9):
         self.seen_subjects: list[str] = []
-        self._answer = LLMClassification(
-            category=category, confidence=confidence, reason="llm said so"
-        )
+        self._category = category
+        self._confidence = confidence
         self.runnable = RunnableLambda(self._invoke)
 
     def _invoke(self, inputs):
-        self.seen_subjects.append(inputs["subject"])
-        return self._answer
+        subjects = re.findall(r"^Subject: (.*)$", inputs["emails"], re.MULTILINE)
+        self.seen_subjects.extend(subjects)
+        return LLMBatch(
+            items=[
+                LLMItem(
+                    index=n,
+                    category=self._category,
+                    confidence=self._confidence,
+                    reason="llm said so",
+                )
+                for n in range(1, len(subjects) + 1)
+            ]
+        )
 
 
 RULES = {"bytebytego.com": Category.NEWSLETTERS}
@@ -269,3 +281,74 @@ def test_collect_bill_items_pairs_email_category_and_bill_in_email_order():
         ("3", Category.BILLS),
     ]
     assert all(bill.currency == "INR" for _, _, bill in items)
+
+
+class BatchRecorder:
+    """A chain that only understands batch(): records every request's subjects and the config."""
+
+    def __init__(self):
+        self.requests: list[list[str]] = []
+        self.config = None
+
+    def batch(self, inputs, config=None):
+        self.config = config
+        replies = []
+        for request in inputs:
+            subjects = re.findall(r"^Subject: (.*)$", request["emails"], re.MULTILINE)
+            self.requests.append(subjects)
+            replies.append(
+                LLMBatch(
+                    items=[
+                        LLMItem(
+                            index=n,
+                            category=Category.PROMOTIONS,
+                            confidence=0.9,
+                            reason="batched",
+                        )
+                        for n in range(1, len(subjects) + 1)
+                    ]
+                )
+            )
+        return replies
+
+
+def run_with_recorder(emails, recorder, **kwargs):
+    graph = build_graph(FakeGmail(emails), RULES, recorder, **kwargs)
+    return graph.invoke({})
+
+
+def test_all_unmatched_mail_goes_to_the_model_together_in_order():
+    recorder = BatchRecorder()
+    emails = [
+        make_email("1", "deals@shop.com", "first"),
+        make_email("2", "a@bytebytego.com", "second"),  # decided by a rule
+        make_email("3", "x@other.com", "third"),
+    ]
+    state = run_with_recorder(emails, recorder)
+    assert recorder.requests == [
+        ["first", "third"]
+    ]  # one request, rule-matched mail left out
+    assert [p.email_id for p in state["proposals"]] == ["1", "2", "3"]
+    assert state["proposals"][0].reason == "batched"
+
+
+def test_the_concurrency_cap_is_configurable_and_has_a_default():
+    recorder = BatchRecorder()
+    run_with_recorder([make_email("1", "x@other.com")], recorder)
+    assert recorder.config == {"max_concurrency": DEFAULT_CONCURRENCY}
+    recorder = BatchRecorder()
+    run_with_recorder([make_email("1", "x@other.com")], recorder, max_concurrency=3)
+    assert recorder.config == {"max_concurrency": 3}
+
+
+def test_the_batch_size_can_be_set_from_the_graph():
+    recorder = BatchRecorder()
+    emails = [make_email(str(i), f"x{i}@other.com", f"s{i}") for i in range(5)]
+    run_with_recorder(emails, recorder, batch_size=2)
+    assert sorted(len(r) for r in recorder.requests) == [1, 2, 2]
+
+
+def test_no_model_call_at_all_when_every_mail_is_decided_by_a_rule():
+    recorder = BatchRecorder()
+    run_with_recorder([make_email("1", "a@bytebytego.com")], recorder)
+    assert recorder.requests == []
