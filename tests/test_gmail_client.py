@@ -333,3 +333,34 @@ def test_fetch_senders_asks_google_to_retry_when_rate_limited():
     )
     GmailClient(service).fetch_senders("Label_1")
     assert all(c.get("num_retries", 0) >= 3 for c in calls) and len(calls) == 2
+
+
+SINCE = datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)  # epoch 1700000000
+
+
+def test_fetch_since_asks_gmail_for_everything_after_that_moment():
+    service = fake_service(
+        [{"messages": [{"id": "a"}, {"id": "b"}]}],
+        {"a": make_message("a"), "b": make_message("b")},
+    )
+    emails = GmailClient(service).fetch_since(SINCE)
+    assert [e.id for e in emails] == ["a", "b"]
+    msgs = service.users.return_value.messages.return_value
+    query = msgs.list.call_args.kwargs["q"]
+    assert "after:1700000000" in query
+    assert "-in:sent" in query and "-in:drafts" in query  # only mail that arrived
+    assert "in:inbox" not in query.replace("-in:", "")  # not just the inbox tab
+    assert msgs.get.call_args.kwargs["format"] == "full"
+
+
+def test_fetch_since_stops_at_max_results():
+    pages = [{"messages": [{"id": str(i)} for i in range(5)]}]
+    messages = {str(i): make_message(str(i)) for i in range(5)}
+    emails = GmailClient(fake_service(pages, messages)).fetch_since(
+        SINCE, max_results=3
+    )
+    assert [e.id for e in emails] == ["0", "1", "2"]
+
+
+def test_fetch_since_with_no_mail_returns_an_empty_list():
+    assert GmailClient(fake_service([{}], {})).fetch_since(SINCE) == []

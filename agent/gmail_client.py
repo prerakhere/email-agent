@@ -198,9 +198,7 @@ class GmailClient:
                 senders.append(sender)
         return senders
 
-    def fetch_recent(self, days: int, max_results: int = 100) -> list[Email]:
-        """Inbox mail from the last `days` days, newest first, at most `max_results`."""
-        ids = self._list_message_ids(max_results, q=f"in:inbox newer_than:{days}d")
+    def _get_emails(self, ids: list[str]) -> list[Email]:
         return [
             message_to_email(
                 self._service.users()
@@ -208,5 +206,21 @@ class GmailClient:
                 .get(userId="me", id=mid, format="full")
                 .execute(num_retries=READ_RETRIES)
             )
-            for mid in ids[:max_results]
+            for mid in ids
         ]
+
+    def fetch_recent(self, days: int, max_results: int = 100) -> list[Email]:
+        """Inbox mail from the last `days` days, newest first, at most `max_results`."""
+        ids = self._list_message_ids(max_results, q=f"in:inbox newer_than:{days}d")
+        return self._get_emails(ids[:max_results])
+
+    def fetch_since(self, since: datetime, max_results: int = 500) -> list[Email]:
+        """Every message that arrived after `since` (UTC), wherever it is filed.
+
+        Not limited to the inbox: mail may already have been labelled and moved out. Mail you
+        sent and drafts are excluded because they never belong in a digest. `after:` takes an
+        exact epoch second, unlike `newer_than:` which only counts whole days.
+        """
+        query = f"after:{int(since.timestamp())} -in:sent -in:drafts"
+        ids = self._list_message_ids(max_results, q=query)
+        return self._get_emails(ids[:max_results])
