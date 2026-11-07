@@ -84,6 +84,20 @@ DEFAULT_CONFIG = DigestConfig(
             style="Two or three key points. Skip pure promotion.",
         ),
         DigestSection(
+            title="Promotions",
+            categories=[Category.PROMOTIONS],
+            style="A short roundup: the count, and the notable brands or offers in a line or two.",
+            mode="group",
+            max_items=5,
+        ),
+        DigestSection(
+            title="Notifications",
+            categories=[Category.NOTIFICATIONS],
+            style="A short roundup: the count and what the notifications were about.",
+            mode="group",
+            max_items=5,
+        ),
+        DigestSection(
             title="Needs review",
             categories=[Category.NEEDS_REVIEW],
             style="One line on what the mail is and why it was unclear.",

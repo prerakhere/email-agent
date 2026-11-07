@@ -25,6 +25,8 @@ def test_the_defaults_cover_the_sections_the_digest_needs_in_order():
         "Bills and receipts",
         "Job alerts",
         "Newsletters",
+        "Promotions",
+        "Notifications",
         "Needs review",
     ]
     assert all(s.style.strip() for s in DEFAULT_CONFIG.sections)
@@ -45,9 +47,21 @@ def test_section_for_finds_the_section_that_owns_a_category():
     assert DEFAULT_CONFIG.section_for(Category.RECEIPTS).title == "Bills and receipts"
 
 
+def test_every_category_has_a_section_in_the_defaults():
+    for category in Category:
+        assert DEFAULT_CONFIG.section_for(category) is not None, category
+
+
+def test_promotions_and_notifications_get_short_group_summaries_by_default():
+    for category in (Category.PROMOTIONS, Category.NOTIFICATIONS):
+        found = DEFAULT_CONFIG.section_for(category)
+        assert found.mode == "group"
+        assert "short" in found.style.lower() or "brief" in found.style.lower()
+
+
 def test_categories_in_no_section_have_no_section():
-    assert DEFAULT_CONFIG.section_for(Category.PROMOTIONS) is None
-    assert DEFAULT_CONFIG.section_for(Category.NOTIFICATIONS) is None
+    config = DigestConfig(sections=[DigestSection(**section())])
+    assert config.section_for(Category.PROMOTIONS) is None
 
 
 def test_a_category_in_two_sections_is_rejected():
