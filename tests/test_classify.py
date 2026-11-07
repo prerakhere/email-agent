@@ -1,6 +1,9 @@
 import re
 from types import SimpleNamespace
 
+import httpx
+import openai
+import pytest
 from langchain_core.runnables import RunnableLambda
 
 from agent.nodes.classify import (
@@ -188,7 +191,7 @@ class RecordingChain:
     def __init__(self):
         self.config = None
 
-    def batch(self, inputs, config=None):
+    def batch(self, inputs, config=None, **_kwargs):
         self.config = config
         return [LLMBatch(items=[item(1, Category.PROMOTIONS)]) for _ in inputs]
 
@@ -238,3 +241,70 @@ def test_built_chain_asks_the_model_for_the_batch_shape_with_the_full_prompt():
     assert (
         "untrusted" in text.lower()
     )  # emails must be treated as data, not instructions
+
+
+def bad_request(code):
+    """The error Azure raises for a rejected request (HTTP 400 with an error code)."""
+    response = httpx.Response(
+        400, request=httpx.Request("POST", "https://example.invalid/")
+    )
+    return openai.BadRequestError(
+        "rejected", response=response, body={"code": code, "message": "rejected"}
+    )
+
+
+def filtered_unless_clean(inputs):
+    """A model that rejects any request containing BADTEXT, like Azure's content filter."""
+    text = inputs["emails"]
+    if "BADTEXT" in text:
+        raise bad_request("content_filter")
+    subjects = re.findall(r"^Subject: (.*)$", text, re.MULTILINE)
+    return LLMBatch(
+        items=[item(n, Category.NEWSLETTERS) for n in range(1, len(subjects) + 1)]
+    )
+
+
+def test_a_rejected_batch_is_retried_one_email_at_a_time():
+    emails = [
+        make_email(subject="a"),
+        make_email(subject="b", body_preview="BADTEXT"),
+        make_email(subject="c"),
+    ]
+    first, second, third = classify_many(emails, RunnableLambda(filtered_unless_clean))
+    assert first.category == Category.NEWSLETTERS
+    assert third.category == Category.NEWSLETTERS
+    assert second.category == Category.NEEDS_REVIEW
+    assert "content filter" in second.reason
+    assert second.source == "llm"
+
+
+def test_only_the_rejected_batch_is_retried_other_batches_are_left_alone():
+    requests = []
+
+    def record_then_filter(inputs):
+        requests.append(inputs["emails"].count("<email id="))
+        return filtered_unless_clean(inputs)
+
+    emails = [make_email(subject=f"s{i}") for i in range(12)]
+    emails[3] = make_email(subject="s3", body_preview="BADTEXT")
+    results = classify_many(emails, RunnableLambda(record_then_filter))
+    assert [r.category for r in results].count(Category.NEEDS_REVIEW) == 1
+    assert results[3].category == Category.NEEDS_REVIEW
+    # first batch (10) rejected, then its 10 emails one by one; the second batch (2) went through once
+    assert sorted(requests) == [1] * 10 + [2, 10]
+
+
+def test_other_errors_are_not_swallowed():
+    def boom(_inputs):
+        raise RuntimeError("rate limit exhausted")
+
+    with pytest.raises(RuntimeError, match="rate limit exhausted"):
+        classify_many([make_email()], RunnableLambda(boom))
+
+
+def test_a_400_that_is_not_a_content_filter_is_not_swallowed():
+    def other_400(_inputs):
+        raise bad_request("invalid_request_error")
+
+    with pytest.raises(openai.BadRequestError):
+        classify_many([make_email()], RunnableLambda(other_400))

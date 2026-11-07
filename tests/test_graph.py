@@ -290,7 +290,7 @@ class BatchRecorder:
         self.requests: list[list[str]] = []
         self.config = None
 
-    def batch(self, inputs, config=None):
+    def batch(self, inputs, config=None, **_kwargs):
         self.config = config
         replies = []
         for request in inputs:

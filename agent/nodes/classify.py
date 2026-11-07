@@ -9,6 +9,7 @@ once per ten emails instead of once per email. Answers are matched back to email
 each <email id=N> block, never by position, so a skipped or repeated answer can't mislabel mail.
 """
 
+import openai
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
@@ -125,6 +126,45 @@ def _no_answer() -> Classification:
     )
 
 
+def _is_content_filter_error(error: BaseException) -> bool:
+    """Azure rejects a request whose text trips its content filter: HTTP 400, code content_filter."""
+    return (
+        isinstance(error, openai.BadRequestError)
+        and getattr(error, "code", None) == "content_filter"
+    )
+
+
+def _blocked() -> Classification:
+    return Classification(
+        category=Category.NEEDS_REVIEW,
+        confidence=0.0,
+        reason="blocked by Azure's content filter; needs a human look",
+        source="llm",
+    )
+
+
+def _from_reply(
+    chunk: list[Email], reply: LLMBatch, threshold: float
+) -> list[Classification]:
+    """Match a reply's items to the chunk's emails by id (never by position)."""
+    by_index: dict[int, LLMItem] = {}
+    for answer in reply.items:
+        # Ignore ids that match no email, and repeats (the first answer wins).
+        if 1 <= answer.index <= len(chunk) and answer.index not in by_index:
+            by_index[answer.index] = answer
+    results = []
+    for n in range(1, len(chunk) + 1):
+        answer = by_index.get(n)
+        results.append(
+            _to_classification(answer, threshold) if answer else _no_answer()
+        )
+    return results
+
+
+def _request(emails: list[Email]) -> dict[str, str]:
+    return {"emails": render_emails([build_inputs(email) for email in emails])}
+
+
 def classify_many(
     emails: list[Email],
     chain: Runnable,
@@ -135,29 +175,38 @@ def classify_many(
     """Classify emails `batch_size` per request, a few requests at a time, in the same order.
 
     `chain.batch` is LangChain's built-in way to run one chain over many inputs in parallel;
-    `max_concurrency` caps how many requests run at once to stay inside the rate limit.
+    `max_concurrency` caps how many run at once to stay inside the rate limit.
+
+    If Azure's content filter rejects a whole request (one flagged email would otherwise sink
+    its nine neighbours), that batch is retried one email at a time; an email still rejected on
+    its own becomes Needs-Review. Any other error (e.g. a rate limit that outlasted the retries)
+    is raised, not hidden.
     """
     if not emails:
         return []
+    config = {"max_concurrency": max_concurrency}
     chunks = [emails[i : i + batch_size] for i in range(0, len(emails), batch_size)]
-    requests = [
-        {"emails": render_emails([build_inputs(email) for email in chunk])}
-        for chunk in chunks
-    ]
-    replies: list[LLMBatch] = chain.batch(
-        requests, config={"max_concurrency": max_concurrency}
+    replies = chain.batch(
+        [_request(chunk) for chunk in chunks], config=config, return_exceptions=True
     )
 
     results: list[Classification] = []
     for chunk, reply in zip(chunks, replies, strict=True):
-        by_index: dict[int, LLMItem] = {}
-        for answer in reply.items:
-            # Ignore ids that match no email, and repeats (the first answer wins).
-            if 1 <= answer.index <= len(chunk) and answer.index not in by_index:
-                by_index[answer.index] = answer
-        for n in range(1, len(chunk) + 1):
-            answer = by_index.get(n)
-            results.append(
-                _to_classification(answer, threshold) if answer else _no_answer()
-            )
+        if not isinstance(reply, BaseException):
+            results.extend(_from_reply(chunk, reply, threshold))
+            continue
+        if not _is_content_filter_error(reply):
+            raise reply
+        singles = chain.batch(
+            [_request([email]) for email in chunk],
+            config=config,
+            return_exceptions=True,
+        )
+        for email, single in zip(chunk, singles, strict=True):
+            if not isinstance(single, BaseException):
+                results.extend(_from_reply([email], single, threshold))
+            elif _is_content_filter_error(single):
+                results.append(_blocked())
+            else:
+                raise single
     return results
