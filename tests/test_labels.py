@@ -1,6 +1,6 @@
 import pytest
 
-from agent.labels import resolve_label
+from agent.labels import AGENT_FALLBACK, category_for_labels, resolve_label
 from agent.schemas import Category
 
 # Subset of the real label tree (see scripts/list_labels.py).
@@ -63,3 +63,32 @@ def test_match_is_case_insensitive_and_returns_the_real_spelling():
 @pytest.mark.parametrize("category", list(Category))
 def test_every_category_resolves_to_a_label(category):
     assert resolve_label(category, REAL_LABELS)
+
+
+@pytest.mark.parametrize("category", list(Category))
+def test_every_agent_label_maps_back_to_its_category(category):
+    assert category_for_labels([AGENT_FALLBACK[category]]) == category
+
+
+def test_the_users_own_folders_map_to_a_category():
+    assert category_for_labels(["Newsletters"]) == Category.NEWSLETTERS
+    assert category_for_labels(["To Go Through/bytebytego"]) == Category.NEWSLETTERS
+    assert category_for_labels(["Finances/Statements, Receipts"]) == Category.BILLS
+    donations = ["Finances/Statements, Receipts/Donations"]
+    assert (
+        category_for_labels(donations) == Category.RECEIPTS
+    )  # most specific folder wins
+
+
+def test_matching_ignores_case():
+    assert category_for_labels(["agent/job-alerts"]) == Category.JOB_ALERTS
+
+
+def test_an_agent_label_wins_over_one_of_the_users_folders():
+    labels = ["Newsletters", "Agent/Promotions"]
+    assert category_for_labels(labels) == Category.PROMOTIONS
+
+
+def test_labels_that_say_nothing_about_a_category_give_none():
+    assert category_for_labels(["Job Applications", "Random"]) is None
+    assert category_for_labels([]) is None
