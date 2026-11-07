@@ -4,6 +4,8 @@ its bills/receipts to the Google Sheet.
 Run:  uv run python scripts/apply_labels.py --days 3 --max 20          (plan only, changes nothing)
 Real: set DRY_RUN=false in .env, then add --apply; you must also type `yes` at the prompt.
 
+Add --no-label to log bills/receipts to the sheet only, leaving every label in Gmail untouched.
+
 By default (KEEP_IN_INBOX unset or true) mail is only LABELLED and stays in the inbox.
 Set KEEP_IN_INBOX=false later to also remove INBOX; then Important, Needs-Review and starred mail
 still stay. Nothing is ever deleted. Never prints keys or email bodies.
@@ -28,6 +30,7 @@ from langchain_openai import AzureChatOpenAI
 from phase0_check import get_credentials
 
 from agent.apply import apply_proposals
+from agent.execute import execute_run
 from agent.gmail_client import GmailClient
 from agent.graph import BILLING, build_graph, collect_bill_items
 from agent.nodes.classify import build_classifier
@@ -48,7 +51,13 @@ def main() -> None:
         action="store_true",
         help="Actually move mail. Also needs DRY_RUN=false in .env and a typed `yes`.",
     )
+    parser.add_argument(
+        "--no-label",
+        action="store_true",
+        help="Only log bills/receipts to the sheet; do not touch any labels in Gmail.",
+    )
     args = parser.parse_args()
+    label = not args.no_label
 
     keep_in_inbox = os.environ.get("KEEP_IN_INBOX", "true").strip().lower() != "false"
     env_allows = os.environ.get("DRY_RUN", "true").strip().lower() == "false"
@@ -85,7 +94,11 @@ def main() -> None:
     plan = apply_proposals(
         state["proposals"], gmail, dry_run=True, keep_in_inbox=keep_in_inbox
     )
-    print(format_apply_report(plan, dry_run=True))
+    print(
+        format_apply_report(plan, dry_run=True)
+        if label
+        else "Labelling skipped (--no-label): no labels will be touched."
+    )
 
     items = collect_bill_items(state)
     logged = {email.id for email, _, _ in items}
@@ -97,7 +110,7 @@ def main() -> None:
     )
     print()
     print(format_bill_plan(items, missed))
-    if not args.apply or not (plan.planned or items):
+    if not args.apply or not ((label and plan.planned) or items):
         return
 
     sheet_id = os.environ.get("SHEET_ID", "")
@@ -107,22 +120,27 @@ def main() -> None:
         )
 
     what = "Label" if keep_in_inbox else "Move out of the inbox"
-    answer = input(
-        f"\n{what} {len(plan.planned)} emails and add up to {len(items)} sheet rows? Type yes: "
-    )
+    to_do = f"{what} {len(plan.planned)} emails and add" if label else "Add"
+    answer = input(f"\n{to_do} up to {len(items)} sheet rows? Type yes: ")
     if answer.strip().lower() != "yes":
         print("Cancelled. Nothing was changed.")
         return
-    if items:  # sheet FIRST: a failure here leaves the mail unlabelled, so the next run retries
-        sheets = SheetsClient(build("sheets", "v4", credentials=creds), sheet_id)
-        added = sheets.log_bills(items)
-        print(
-            f"\n{len(added)} rows added to the sheet ({len(items) - len(added)} already logged)."
-        )
-    done = apply_proposals(
-        state["proposals"], gmail, dry_run=False, keep_in_inbox=keep_in_inbox
+
+    sheets = (
+        SheetsClient(build("sheets", "v4", credentials=creds), sheet_id)
+        if items
+        else None
     )
-    print("\n" + format_apply_report(done, dry_run=False))
+    outcome = execute_run(
+        state, gmail, sheets, label=label, keep_in_inbox=keep_in_inbox
+    )
+    if items:
+        added = len(outcome.rows_added)
+        print(
+            f"\n{added} rows added to the sheet ({len(items) - added} already logged)."
+        )
+    if outcome.labelled is not None:
+        print("\n" + format_apply_report(outcome.labelled, dry_run=False))
 
 
 if __name__ == "__main__":
