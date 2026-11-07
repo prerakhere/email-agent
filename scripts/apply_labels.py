@@ -1,4 +1,5 @@
-"""Phase 3: classify recent inbox mail, show the plan, and (only if you ask) move it.
+"""Phases 3-4: classify recent inbox mail, show the plan, and (only if you ask) label it and log
+its bills/receipts to the Google Sheet.
 
 Run:  uv run python scripts/apply_labels.py --days 3 --max 20          (plan only, changes nothing)
 Real: set DRY_RUN=false in .env, then add --apply; you must also type `yes` at the prompt.
@@ -6,6 +7,10 @@ Real: set DRY_RUN=false in .env, then add --apply; you must also type `yes` at t
 By default (KEEP_IN_INBOX unset or true) mail is only LABELLED and stays in the inbox.
 Set KEEP_IN_INBOX=false later to also remove INBOX; then Important, Needs-Review and starred mail
 still stay. Nothing is ever deleted. Never prints keys or email bodies.
+
+Bills/receipts: one run extracts their details AND labels them, because already-labelled mail is
+skipped on later runs. On --apply the sheet rows are written FIRST, then the labels: if the sheet
+write fails the mail stays unlabelled and the next run retries it. Needs SHEET_ID in .env.
 """
 
 import argparse
@@ -24,10 +29,12 @@ from phase0_check import get_credentials
 
 from agent.apply import apply_proposals
 from agent.gmail_client import GmailClient
-from agent.graph import build_graph
+from agent.graph import BILLING, build_graph, collect_bill_items
 from agent.nodes.classify import build_classifier
-from agent.report import format_apply_report, format_table
+from agent.nodes.extract import build_extractor
+from agent.report import format_apply_report, format_bill_plan, format_table
 from agent.rules import load_rules
+from agent.sheets_client import SheetsClient
 
 load_dotenv(ROOT / ".env")
 
@@ -61,15 +68,17 @@ def main() -> None:
         azure_deployment=os.environ["AZURE_OPENAI_DEPLOYMENT"],
         temperature=0,
     )
-    gmail = GmailClient(build("gmail", "v1", credentials=get_credentials()))
+    creds = get_credentials()
+    gmail = GmailClient(build("gmail", "v1", credentials=creds))
     graph = build_graph(
         gmail,
         load_rules(RULES_PATH),
         build_classifier(llm),
         days=args.days,
         max_results=args.max_results,
+        extractor=build_extractor(llm),
     )
-    state = graph.invoke({}, config={"tags": ["apply"], "metadata": {"phase": 3}})
+    state = graph.invoke({}, config={"tags": ["apply"], "metadata": {"phase": 4}})
     print(format_table(state["proposals"]))
     print()
 
@@ -77,14 +86,39 @@ def main() -> None:
         state["proposals"], gmail, dry_run=True, keep_in_inbox=keep_in_inbox
     )
     print(format_apply_report(plan, dry_run=True))
-    if not args.apply or not plan.planned:
+
+    items = collect_bill_items(state)
+    logged = {email.id for email, _, _ in items}
+    missed = sum(
+        1
+        for email in state["emails"]
+        if state["classifications"][email.id].category in BILLING
+        and email.id not in logged
+    )
+    print()
+    print(format_bill_plan(items, missed))
+    if not args.apply or not (plan.planned or items):
         return
 
+    sheet_id = os.environ.get("SHEET_ID", "")
+    if items and not sheet_id:
+        sys.exit(
+            "Bills were found but SHEET_ID is not set in .env. Nothing was changed."
+        )
+
     what = "Label" if keep_in_inbox else "Move out of the inbox"
-    answer = input(f"\n{what} {len(plan.planned)} emails? Type yes: ")
+    answer = input(
+        f"\n{what} {len(plan.planned)} emails and add up to {len(items)} sheet rows? Type yes: "
+    )
     if answer.strip().lower() != "yes":
         print("Cancelled. Nothing was changed.")
         return
+    if items:  # sheet FIRST: a failure here leaves the mail unlabelled, so the next run retries
+        sheets = SheetsClient(build("sheets", "v4", credentials=creds), sheet_id)
+        added = sheets.log_bills(items)
+        print(
+            f"\n{len(added)} rows added to the sheet ({len(items) - len(added)} already logged)."
+        )
     done = apply_proposals(
         state["proposals"], gmail, dry_run=False, keep_in_inbox=keep_in_inbox
     )

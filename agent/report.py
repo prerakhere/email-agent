@@ -10,7 +10,8 @@ from collections.abc import Mapping
 from agent.apply import ApplyResult
 from agent.nodes.classify import build_inputs
 from agent.nodes.prefilter import prefilter
-from agent.schemas import Category, Email, Proposal
+from agent.schemas import Bill, Category, Email, Proposal
+from agent.sheets_client import build_row
 
 # (header, width, getter)
 COLUMNS = [
@@ -99,3 +100,27 @@ def format_apply_report(result: ApplyResult, dry_run: bool) -> str:
     else:
         summary = f"{len(result.moved)} moved, {len(result.skipped)} left in the inbox."
     return "\n".join(lines) + "\n\n" + summary
+
+
+def format_bill_plan(items: list[tuple[Email, Category, Bill]], missed: int = 0) -> str:
+    """The sheet rows a run would add (built by the same code that writes them)."""
+    note = ""
+    if missed:
+        noun = "mail" if missed == 1 else "mails"
+        note = f"{missed} bill/receipt {noun} had no readable amount and would not be logged."
+    if not items:
+        return "\n".join(x for x in ("No bills or receipts to log.", note) if x)
+    lines = []
+    for email, category, bill in items:
+        row = build_row(email, category, bill)
+        due = row[5] or "-"
+        lines.append(
+            f"LOG   {row[1]:<7} {_fit(row[2], 24)}  {row[3]:>12,.2f} {row[4]}  due {due:<10}  {row[6]}"
+        )
+    noun = "row" if len(items) == 1 else "rows"
+    lines.append(
+        f"\nDRY RUN: nothing was written. {len(items)} {noun} would be added to the sheet."
+    )
+    if note:
+        lines.append(note)
+    return "\n".join(lines)
