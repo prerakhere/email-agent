@@ -115,3 +115,35 @@ def test_classify_sends_redacted_subject_and_body_but_real_sender():
     assert seen["sender"] == "Bank <alerts@bank.com>"
     assert seen["subject"] == "Your OTP is [REDACTED]"
     assert seen["body_preview"] == "Card [NUMBER] see [LINK:bank.com]"
+
+
+RUPEE = chr(0x20B9)
+EURO = chr(0x20AC)
+
+
+def test_amounts_next_to_a_currency_marker_are_kept():
+    assert (
+        redact("Amount due Rs. 125000.00 by 5th") == "Amount due Rs. 125000.00 by 5th"
+    )
+    assert redact("Total INR 1250000 paid") == "Total INR 1250000 paid"
+    assert redact(f"Charged {RUPEE}125000") == f"Charged {RUPEE}125000"
+    assert redact("Charged $ 100000") == "Charged $ 100000"
+    assert redact(f"Refund {EURO}250000") == f"Refund {EURO}250000"
+
+
+def test_two_decimal_amounts_are_kept_even_without_a_currency_marker():
+    assert redact("Amount: 125000.00") == "Amount: 125000.00"
+
+
+def test_long_numbers_after_a_currency_marker_are_still_masked_when_too_long_to_be_money():
+    assert redact("Rs 123456789012") == "Rs [NUMBER]"
+
+
+def test_plain_long_numbers_are_still_masked_after_the_amount_change():
+    assert redact("Account 123456789012 debited") == "Account [NUMBER] debited"
+    assert redact("Total: 125000") == "Total: [NUMBER]"
+
+
+def test_an_account_number_near_an_amount_is_masked_but_the_amount_stays():
+    out = redact("A/c 123456789012 debited Rs 125000.00")
+    assert out == "A/c [NUMBER] debited Rs 125000.00"

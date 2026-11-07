@@ -3,7 +3,8 @@
 Runs on this machine, so masked values never leave it. Deliberately conservative: it masks
 long digit runs, card/Aadhaar/phone-style groups, PAN numbers, secrets after words like OTP,
 and URL paths/queries (which often carry tokens). Amounts and dates are left alone because the
-classifier needs them. It also strips invisible characters. Regexes are a first layer, not a
+classifier needs them (long numbers right after a currency marker, or with two decimals, are kept
+as amounts). It also strips invisible characters. Regexes are a first layer, not a
 guarantee.
 """
 
@@ -37,6 +38,15 @@ _PAN = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
 _GROUPED = re.compile(r"\b\d{4}[ -]\d{4}[ -]\d{4}(?:[ -]\d{1,4})?\b")  # cards, Aadhaar
 _PHONE = re.compile(r"\b\d{5}[ -]\d{5}\b")
 _LONG_DIGITS = re.compile(r"\d{6,}")
+# Money must survive masking or bills/receipts can't be read. A long number is kept when it sits
+# right after a currency marker (and is short enough to be an amount) or has two decimals, which
+# account numbers never do. Symbols come from code points so this file stays plain ASCII.
+_CURRENCY_BEFORE = re.compile(
+    r"(?:rs\.?|inr|usd|eur|gbp|[$" + chr(0x20B9) + chr(0x20AC) + chr(0xA3) + r"])\s*$",
+    re.IGNORECASE,
+)
+_TWO_DECIMALS = re.compile(r"\.\d{2}(?!\d)")
+_MAX_AMOUNT_DIGITS = 9
 
 
 def redact(text: str) -> str:
@@ -47,4 +57,14 @@ def redact(text: str) -> str:
     text = _PAN.sub("[PAN]", text)
     text = _GROUPED.sub("[NUMBER]", text)
     text = _PHONE.sub("[NUMBER]", text)
-    return _LONG_DIGITS.sub("[NUMBER]", text)
+    return _LONG_DIGITS.sub(_mask_unless_money, text)
+
+
+def _mask_unless_money(match: re.Match) -> str:
+    text, digits = match.string, match.group()
+    after_currency = _CURRENCY_BEFORE.search(text[: match.start()])
+    if after_currency and len(digits) <= _MAX_AMOUNT_DIGITS:
+        return digits
+    if _TWO_DECIMALS.match(text, match.end()):
+        return digits
+    return "[NUMBER]"
