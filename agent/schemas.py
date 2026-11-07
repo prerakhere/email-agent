@@ -55,7 +55,8 @@ class Classification(BaseModel):
     category: Category
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
-    source: Literal["rule", "llm"]
+    # label: read back from a label the mail already carried (no model call)
+    source: Literal["rule", "llm", "label"]
 
 
 class Proposal(BaseModel):

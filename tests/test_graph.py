@@ -1,4 +1,5 @@
 import re
+from datetime import UTC, datetime
 
 from langchain_core.runnables import RunnableLambda
 
@@ -18,9 +19,14 @@ class FakeGmail:
         self._labels = list(labels)
         self._label_ids = label_ids or {}
         self.fetch_args = None
+        self.since_args = None
 
     def fetch_recent(self, days, max_results=100):
         self.fetch_args = (days, max_results)
+        return self._emails
+
+    def fetch_since(self, since, max_results=500):
+        self.since_args = (since, max_results)
         return self._emails
 
     def list_label_names(self):
@@ -352,3 +358,104 @@ def test_no_model_call_at_all_when_every_mail_is_decided_by_a_rule():
     recorder = BatchRecorder()
     run_with_recorder([make_email("1", "a@bytebytego.com")], recorder)
     assert recorder.requests == []
+
+
+# ---- digest window mode: everything since a moment, labelled or not ----
+
+SINCE = datetime(2026, 11, 7, 2, 30, tzinfo=UTC)
+LABEL_IDS = {
+    "Agent/Job-Alerts": "L_jobs",
+    "Agent/Promotions": "L_promo",
+    "Job Applications": "L_apps",
+}
+
+
+def labelled(mid, label_id, sender="x@other.com", subject="s"):
+    return Email(
+        id=mid,
+        thread_id=f"t-{mid}",
+        sender=sender,
+        subject=subject,
+        label_ids=["INBOX", label_id],
+    )
+
+
+def run_window(emails, chain, **kwargs):
+    return run(emails, chain, label_ids=LABEL_IDS, since=SINCE, **kwargs)
+
+
+def test_window_mode_fetches_since_the_moment_not_by_days():
+    chain = FakeChain()
+    _, gmail = run_window([make_email("1", "a@x.com")], chain, max_results=250)
+    assert gmail.since_args == (SINCE, 250)
+    assert gmail.fetch_args is None
+
+
+def test_window_mode_keeps_mail_that_already_has_a_label():
+    chain = FakeChain()
+    emails = [labelled("1", "L_jobs"), make_email("2", "b@x.com")]
+    state, _ = run_window(emails, chain)
+    assert [e.id for e in state["emails"]] == ["1", "2"]
+    assert state["filed_ids"] == ["1"]
+
+
+def test_labelled_mail_takes_its_category_from_the_label_with_no_model_call():
+    chain = FakeChain()
+    state, _ = run_window([labelled("1", "L_jobs", subject="a job")], chain)
+    assert chain.seen_subjects == []
+    found = state["classifications"]["1"]
+    assert found.category == Category.JOB_ALERTS
+    assert found.source == "label" and found.confidence == 1.0
+
+
+def test_a_label_beats_a_sender_rule():
+    chain = FakeChain()
+    mail = labelled("1", "L_promo", sender="a@bytebytego.com")  # rule says newsletters
+    state, _ = run_window([mail], chain)
+    assert state["classifications"]["1"].category == Category.PROMOTIONS
+
+
+def test_labelled_mail_whose_label_says_nothing_is_still_classified_by_the_model():
+    chain = FakeChain(Category.IMPORTANT, 0.9)
+    state, _ = run_window([labelled("1", "L_apps", subject="my application")], chain)
+    assert chain.seen_subjects == ["my application"]
+    assert state["classifications"]["1"].category == Category.IMPORTANT
+    assert state["classifications"]["1"].source == "llm"
+
+
+def test_only_mail_without_a_label_gets_a_label_proposal():
+    chain = FakeChain()
+    emails = [
+        labelled("1", "L_jobs"),
+        labelled("2", "L_apps"),
+        make_email("3", "c@x.com"),
+    ]
+    state, _ = run_window(emails, chain)
+    assert [p.email_id for p in state["proposals"]] == ["3"]
+
+
+def test_window_mode_still_extracts_bills_from_labelled_mail():
+    extractor = FakeExtractor()
+    bill_labels = {"Finances/Statements, Receipts": "L_fin"}
+    graph = build_graph(
+        FakeGmail(
+            [labelled("1", "L_fin", subject="Statement")],
+            label_ids=bill_labels,
+        ),
+        {},
+        FakeChain().runnable,
+        since=SINCE,
+        extractor=extractor.runnable,
+    )
+    state = graph.invoke({})
+    assert state["classifications"]["1"].category == Category.BILLS
+    assert "1" in state["bills"]
+
+
+def test_day_mode_is_unchanged_and_still_drops_labelled_mail():
+    chain = FakeChain()
+    emails = [labelled("1", "L_jobs"), make_email("2", "b@x.com")]
+    state, gmail = run(emails, chain, label_ids=LABEL_IDS)
+    assert gmail.fetch_args == (3, 100) and gmail.since_args is None
+    assert [e.id for e in state["emails"]] == ["2"]
+    assert state.get("filed_ids", []) == []

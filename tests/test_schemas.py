@@ -89,3 +89,12 @@ def test_bill_due_date_optional():
     assert (
         Bill(vendor="x", amount="10", currency="INR", confidence=0.5).due_date is None
     )
+
+
+def test_a_classification_can_come_from_a_label_the_mail_already_had():
+    from agent.schemas import Category, Classification
+
+    c = Classification(
+        category=Category.JOB_ALERTS, confidence=1.0, reason="r", source="label"
+    )
+    assert c.source == "label"

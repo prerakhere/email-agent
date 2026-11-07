@@ -7,12 +7,13 @@ changed; LangGraph merges those into the state. Dependencies (Gmail client, rule
 are injected so tests use fakes.
 """
 
+from datetime import datetime
 from typing import TypedDict
 
 from langchain_core.runnables import Runnable
 from langgraph.graph import END, START, StateGraph
 
-from agent.labels import resolve_label
+from agent.labels import category_for_labels, resolve_label
 from agent.nodes.classify import BATCH_SIZE, DEFAULT_CONCURRENCY, classify_many
 from agent.nodes.extract import extract_bill
 from agent.nodes.prefilter import prefilter
@@ -26,6 +27,8 @@ class AgentState(TypedDict, total=False):
     existing_labels: list[str]
     classifications: dict[str, Classification]  # keyed by email id
     proposals: list[Proposal]
+    filed_ids: list[str]  # window mode: mail that already carried a user label
+    label_names_by_id: dict[str, str]
     # keyed by email id; only bills/receipts with a usable amount
     bills: dict[str, Bill]
 
@@ -39,20 +42,51 @@ def build_graph(
     extractor: Runnable | None = None,
     max_concurrency: int = DEFAULT_CONCURRENCY,
     batch_size: int = BATCH_SIZE,
+    since: datetime | None = None,
 ):
     def fetch_node(state: AgentState) -> dict:
-        # Mail that already carries a user label (ours or the user's own) is already filed:
-        # skip it so it is not re-classified on every run while it stays in the inbox.
-        filed_ids = set(gmail.label_ids_by_name().values())
-        fetched = gmail.fetch_recent(days=days, max_results=max_results)
+        ids_by_name = gmail.label_ids_by_name()
+        user_label_ids = set(ids_by_name.values())
+        if since is not None:
+            # Digest window: keep EVERYTHING since the moment, labelled or not. Mail that already
+            # carries a user label is "filed": it is summarised but never labelled again.
+            emails = gmail.fetch_since(since, max_results=max_results)
+            filed = [e.id for e in emails if user_label_ids & set(e.label_ids)]
+        else:
+            # Day mode: mail that already carries a user label (ours or the user's own) is
+            # skipped so it is not re-classified on every run while it stays in the inbox.
+            fetched = gmail.fetch_recent(days=days, max_results=max_results)
+            emails = [e for e in fetched if not user_label_ids & set(e.label_ids)]
+            filed = []
         return {
-            "emails": [e for e in fetched if not filed_ids & set(e.label_ids)],
+            "emails": emails,
+            "filed_ids": filed,
+            "label_names_by_id": {
+                label_id: name for name, label_id in ids_by_name.items()
+            },
             "existing_labels": gmail.list_label_names(),
         }
 
     def prefilter_node(state: AgentState) -> dict:
+        # Free decisions, no model call: first what a label already says, then sender rules.
         decided = {}
+        filed = set(state["filed_ids"])
         for email in state["emails"]:
+            if email.id in filed:
+                names = [
+                    state["label_names_by_id"][label_id]
+                    for label_id in email.label_ids
+                    if label_id in state["label_names_by_id"]
+                ]
+                category = category_for_labels(names)
+                if category is not None:
+                    decided[email.id] = Classification(
+                        category=category,
+                        confidence=1.0,
+                        reason="already carries a label that says so",
+                        source="label",
+                    )
+                    continue
             result = prefilter(email, rules)
             if result is not None:
                 decided[email.id] = result
@@ -73,7 +107,12 @@ def build_graph(
 
     def propose_node(state: AgentState) -> dict:
         proposals = []
+        filed = set(state["filed_ids"])
         for email in state["emails"]:
+            if (
+                email.id in filed
+            ):  # already labelled: summarised later, never labelled again
+                continue
             c = state["classifications"][email.id]
             proposals.append(
                 Proposal(
