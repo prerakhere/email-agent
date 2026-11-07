@@ -8,3 +8,5 @@ LEARNING.md
 WORKLOG.md
 # learned sender rules: contains the user's correspondents' email addresses
 rules.json
+# personal digest layout (copy of the defaults, edited to taste); see agent/digest_config.py
+digest.toml
