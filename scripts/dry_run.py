@@ -19,11 +19,11 @@ sys.path.insert(
 
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
-from langchain_openai import AzureChatOpenAI
 from phase0_check import get_credentials
 
 from agent.gmail_client import GmailClient
 from agent.graph import build_graph
+from agent.llm import REQUIRED, build_llm
 from agent.nodes.classify import build_classifier
 from agent.report import format_sent_preview, format_table
 from agent.rules import load_rules
@@ -31,13 +31,6 @@ from agent.rules import load_rules
 load_dotenv(ROOT / ".env")
 
 RULES_PATH = ROOT / "rules.json"  # written by scripts/seed_rules.py
-
-REQUIRED = [
-    "AZURE_OPENAI_ENDPOINT",
-    "AZURE_OPENAI_API_KEY",
-    "AZURE_OPENAI_API_VERSION",
-    "AZURE_OPENAI_DEPLOYMENT",
-]
 
 
 def main() -> None:
@@ -73,13 +66,7 @@ def main() -> None:
     if missing:
         sys.exit(f"Missing in .env: {', '.join(missing)}")
 
-    llm = AzureChatOpenAI(
-        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-        api_key=os.environ["AZURE_OPENAI_API_KEY"],
-        api_version=os.environ["AZURE_OPENAI_API_VERSION"],
-        azure_deployment=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-        temperature=0,
-    )
+    llm = build_llm()
     gmail = GmailClient(build("gmail", "v1", credentials=get_credentials()))
     graph = build_graph(
         gmail,

@@ -24,15 +24,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # lets `import agent` work when run as a script
 
 from dotenv import load_dotenv
-from dry_run import REQUIRED, RULES_PATH
+from dry_run import RULES_PATH
 from googleapiclient.discovery import build
-from langchain_openai import AzureChatOpenAI
 from phase0_check import get_credentials
 
 from agent.apply import apply_proposals
 from agent.execute import execute_run
 from agent.gmail_client import GmailClient
 from agent.graph import BILLING, build_graph, collect_bill_items
+from agent.llm import REQUIRED, build_llm
 from agent.nodes.classify import build_classifier
 from agent.nodes.extract import build_extractor
 from agent.report import format_apply_report, format_bill_plan, format_table
@@ -70,13 +70,7 @@ def main() -> None:
     if missing:
         sys.exit(f"Missing in .env: {', '.join(missing)}")
 
-    llm = AzureChatOpenAI(
-        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-        api_key=os.environ["AZURE_OPENAI_API_KEY"],
-        api_version=os.environ["AZURE_OPENAI_API_VERSION"],
-        azure_deployment=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-        temperature=0,
-    )
+    llm = build_llm()
     creds = get_credentials()
     gmail = GmailClient(build("gmail", "v1", credentials=creds))
     graph = build_graph(
