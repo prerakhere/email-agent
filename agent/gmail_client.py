@@ -13,6 +13,9 @@ from agent.schemas import Email
 BODY_PREVIEW_CHARS = 2000
 PAGE_SIZE = 100
 AGENT_PREFIX = "Agent/"
+# Gmail rate-limits bursts of message reads (403/429). Google's client retries with backoff
+# when execute() is given num_retries, so a large fetch slows down instead of crashing.
+READ_RETRIES = 5
 
 
 class _TextExtractor(HTMLParser):
@@ -169,7 +172,7 @@ class GmailClient:
                     pageToken=page_token,
                     **query,
                 )
-                .execute()
+                .execute(num_retries=READ_RETRIES)
             )
             ids.extend(m["id"] for m in response.get("messages", []))
             page_token = response.get("nextPageToken")
@@ -185,7 +188,7 @@ class GmailClient:
                 self._service.users()
                 .messages()
                 .get(userId="me", id=mid, format="metadata", metadataHeaders=["From"])
-                .execute()
+                .execute(num_retries=READ_RETRIES)
             )
             headers = message.get("payload", {}).get("headers", [])
             sender = next(
@@ -203,7 +206,7 @@ class GmailClient:
                 self._service.users()
                 .messages()
                 .get(userId="me", id=mid, format="full")
-                .execute()
+                .execute(num_retries=READ_RETRIES)
             )
             for mid in ids[:max_results]
         ]

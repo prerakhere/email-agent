@@ -117,7 +117,7 @@ def fake_service(list_pages: list[dict], messages: dict[str, dict], labels=None)
     msgs = service.users.return_value.messages.return_value
     msgs.list.return_value.execute.side_effect = list_pages
     msgs.get.side_effect = lambda **kw: SimpleNamespace(
-        execute=lambda: messages[kw["id"]]
+        execute=lambda **_: messages[kw["id"]]
     )
     service.users.return_value.labels.return_value.list.return_value.execute.return_value = {
         "labels": labels or []
@@ -298,3 +298,38 @@ def test_received_at_comes_from_gmail_internal_date_in_utc():
 
 def test_missing_internal_date_gives_no_received_at():
     assert message_to_email(make_message()).received_at is None
+
+
+def recording_service(pages, messages):
+    """Like fake_service, but remembers the kwargs every execute() call received."""
+    service = MagicMock()
+    calls: list[dict] = []
+    msgs = service.users.return_value.messages.return_value
+
+    def list_execute(**kw):
+        calls.append(kw)
+        return pages.pop(0)
+
+    msgs.list.return_value.execute.side_effect = list_execute
+    msgs.get.side_effect = lambda **kw: SimpleNamespace(
+        execute=lambda **ekw: (calls.append(ekw), messages[kw["id"]])[1]
+    )
+    return service, calls
+
+
+def test_fetch_recent_asks_google_to_retry_when_rate_limited():
+    service, calls = recording_service(
+        [{"messages": [{"id": "m1"}, {"id": "m2"}]}],
+        {"m1": make_message("m1"), "m2": make_message("m2")},
+    )
+    GmailClient(service).fetch_recent(days=3)
+    assert len(calls) == 3  # one list call + two message reads
+    assert all(c.get("num_retries", 0) >= 3 for c in calls)
+
+
+def test_fetch_senders_asks_google_to_retry_when_rate_limited():
+    service, calls = recording_service(
+        [{"messages": [{"id": "m1"}]}], {"m1": sender_message("m1", "a@b.com")}
+    )
+    GmailClient(service).fetch_senders("Label_1")
+    assert all(c.get("num_retries", 0) >= 3 for c in calls) and len(calls) == 2
