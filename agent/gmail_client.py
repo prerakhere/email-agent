@@ -6,6 +6,7 @@ Nothing here prints or logs message content.
 
 import base64
 from datetime import UTC, datetime
+from email.message import EmailMessage
 from html.parser import HTMLParser
 
 from agent.schemas import Email
@@ -95,6 +96,17 @@ def message_to_email(message: dict) -> Email:
         label_ids=message.get("labelIds", []),
         received_at=_received_at(message),
     )
+
+
+def build_raw_message(address: str, subject: str, text: str, html: str) -> str:
+    """A base64url MIME message from `address` to itself, with plain-text and HTML versions."""
+    message = EmailMessage()
+    message["To"] = address
+    message["From"] = address
+    message["Subject"] = " ".join(subject.split())  # no newline can start a new header
+    message.set_content(text)
+    message.add_alternative(html, subtype="html")
+    return base64.urlsafe_b64encode(message.as_bytes()).decode()
 
 
 class GmailClient:
@@ -199,6 +211,29 @@ class GmailClient:
             if sender:
                 senders.append(sender)
         return senders
+
+    def my_address(self) -> str:
+        profile = (
+            self._service.users()
+            .getProfile(userId="me")
+            .execute(num_retries=READ_RETRIES)
+        )
+        return profile["emailAddress"]
+
+    def send_to_self(self, subject: str, text: str, html: str) -> str:
+        """Email the digest to the user's own address and return the new message's id.
+
+        There is deliberately no recipient parameter: the agent can only ever write to its owner.
+        The send call is not retried, because a retry after a timeout could deliver it twice.
+        """
+        raw = build_raw_message(self.my_address(), subject, text, html)
+        sent = (
+            self._service.users()
+            .messages()
+            .send(userId="me", body={"raw": raw})
+            .execute()
+        )
+        return sent["id"]
 
     def _get_emails(self, ids: list[str]) -> list[Email]:
         return [
