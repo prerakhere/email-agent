@@ -10,3 +10,5 @@ WORKLOG.md
 rules.json
 # personal digest layout (copy of the defaults, edited to taste); see agent/digest_config.py
 digest.toml
+# rendered digest preview: contains summaries of real mail
+digest_preview.html
