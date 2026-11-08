@@ -26,3 +26,12 @@ def test_our_logs_are_switched_on_so_python_does_not_drop_them():
     import logging
 
     assert logging.getLogger("gmail_agent").level == logging.INFO
+
+
+def test_http_libraries_are_quiet_so_the_logs_hold_our_stage_lines_not_every_request():
+    import logging
+
+    # They log every request at INFO ("HTTP Request: POST <url> 200 OK"): harmless but noisy.
+    for name in ("httpx", "httpx2", "httpcore", "httpcore2", "openai"):
+        assert logging.getLogger(name).level == logging.WARNING, name
+    assert logging.getLogger("gmail_agent").level == logging.INFO  # ours stay on

@@ -17,6 +17,10 @@ from agent.runtime import build_dependencies
 
 # Python drops INFO records by default; without this our counts-and-stages log lines never exist.
 logging.getLogger("gmail_agent").setLevel(logging.INFO)
+# The HTTP libraries log every request at INFO (URL and status only): quiet them so the log holds
+# our stage lines. httpx2/httpcore2 are the names the installed OpenAI client actually uses.
+for _noisy in ("httpx", "httpx2", "httpcore", "httpcore2", "openai"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 app = func.FunctionApp()
 
