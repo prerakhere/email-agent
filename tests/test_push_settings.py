@@ -37,6 +37,10 @@ def test_a_real_run_cannot_start_by_accident():
 def test_it_never_prints_secret_values():
     for line in CODE.splitlines():
         if line.strip().startswith(("echo", "printf")):
+            if (
+                '> "$secret_file"' in line
+            ):  # writing the secret into the private temp file
+                continue
             assert "read_env" not in line and "token.json" not in line, line
             assert "$(cat" not in line, line
 
@@ -50,3 +54,9 @@ def test_the_secret_temp_file_is_private_and_removed():
 def test_it_targets_the_resources_created_for_this_project():
     for name in ("gmail-agent-rg", "gmail-agent-func-pj01", "gmail-agent-kv-pj01"):
         assert name in CODE
+
+
+def test_the_key_is_stored_without_a_trailing_newline():
+    # A trailing newline once made the stored key an illegal HTTP header value.
+    assert 'printf \'%s\' "$(read_env AZURE_OPENAI_API_KEY)" > "$secret_file"' in CODE
+    assert 'read_env AZURE_OPENAI_API_KEY > "$secret_file"' not in CODE

@@ -32,7 +32,8 @@ echo "1/3 Storing the Google token in Key Vault ..."
 az keyvault secret set --vault-name "$KV" --name google-token-json --file token.json -o none
 
 echo "2/3 Storing the Azure OpenAI key in Key Vault ..."
-read_env AZURE_OPENAI_API_KEY > "$secret_file"
+# printf '%s' adds no newline: a trailing newline in the stored key is an illegal HTTP header value.
+printf '%s' "$(read_env AZURE_OPENAI_API_KEY)" > "$secret_file"
 az keyvault secret set --vault-name "$KV" --name azure-openai-api-key --file "$secret_file" -o none
 
 echo "3/3 Setting the Function App's settings (secrets as Key Vault references) ..."
