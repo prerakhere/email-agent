@@ -12,3 +12,5 @@ rules.json
 digest.toml
 # rendered digest preview: contains summaries of real mail
 digest_preview.html
+# generated at deploy time from uv.lock by scripts/deploy.sh
+requirements.txt
