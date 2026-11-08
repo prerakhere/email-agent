@@ -2,8 +2,10 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from langchain_core.runnables import RunnableLambda
 from test_daily import EMAILS, FakeGmail, FakeSheets, Models
 
+from agent.auth import SignInExpiredError
 from agent.digest_config import DEFAULT_CONFIG
 from agent.job import Dependencies, JobFailedError, run_scheduled
 
@@ -120,3 +122,60 @@ def test_logs_carry_counts_and_never_email_text(caplog):
 def test_without_a_sheets_client_the_run_still_works():
     result, deps, _ = run({"DRY_RUN": "false"}, make_deps(sheets=None))
     assert result.rows_added == [] and len(deps.gmail.sent) == 1
+
+
+# ---- unexpected errors must never carry a library's message (it can contain secrets) ----
+
+SECRET = "sk-super-secret-key-123"
+
+
+def exploding_build(_env):
+    raise RuntimeError(f"Illegal header value b'{SECRET}'")
+
+
+def deps_with_failing_classifier():
+    deps = make_deps()
+
+    def boom(_request):
+        raise RuntimeError(f"Illegal header value b'{SECRET}'")
+
+    deps.classifier = RunnableLambda(boom)
+    return deps
+
+
+def test_an_unexpected_error_is_reported_by_type_only():
+    with pytest.raises(JobFailedError, match="RuntimeError") as caught:
+        run_scheduled({}, NOW, exploding_build)
+    assert SECRET not in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+def test_an_error_while_reading_or_summarising_is_sanitised_too():
+    deps = deps_with_failing_classifier()
+    with pytest.raises(JobFailedError) as caught:
+        run_scheduled({}, NOW, lambda _env: deps)
+    assert "RuntimeError" in str(caught.value) and SECRET not in str(caught.value)
+
+
+def test_the_log_records_the_error_type_but_not_its_message(caplog):
+    with (
+        caplog.at_level(logging.INFO, logger="gmail_agent.job"),
+        pytest.raises(JobFailedError),
+    ):
+        run_scheduled({}, NOW, exploding_build)
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "RuntimeError" in logged and SECRET not in logged
+
+
+def test_an_expired_google_sign_in_keeps_its_own_helpful_message():
+    def expired(_env):
+        raise SignInExpiredError("Google sign-in expired or was revoked: sign in again")
+
+    with pytest.raises(SignInExpiredError, match="sign in again"):
+        run_scheduled({}, NOW, expired)
+
+
+def test_detailed_errors_can_be_switched_on_for_debugging():
+    with pytest.raises(RuntimeError, match="Illegal header") as caught:
+        run_scheduled({"DETAILED_ERRORS": "true"}, NOW, exploding_build)
+    assert not isinstance(caught.value, JobFailedError)

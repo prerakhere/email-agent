@@ -5,6 +5,8 @@ Settings come from the environment (app settings in Azure):
                  anything else, or unset, is a dry run that only builds and logs the plan.
   KEEP_IN_INBOX  "false" moves labelled mail out of the inbox; otherwise labels are only added.
   DIGEST_HOURS   how many hours back the digest looks (default 24).
+  DETAILED_ERRORS  "true" lets an unexpected error propagate with its full text, for debugging only:
+                 that text can contain secrets, so leave it off.
 
 Logs carry counts and the mode only: never a subject, a sender or any email text. If any step of the
 run failed the job raises, so Azure marks the execution failed and its alert can fire.
@@ -18,6 +20,7 @@ from typing import Any
 
 from langchain_core.runnables import Runnable
 
+from agent.auth import SignInExpiredError
 from agent.daily import DailyResult, execute_daily, prepare_daily
 from agent.digest_config import DigestConfig
 from agent.schemas import Category
@@ -63,19 +66,30 @@ def run_scheduled(
     keep_in_inbox = env.get("KEEP_IN_INBOX", "true").strip().lower() != "false"
     hours = _hours(env)
 
-    deps = build_dependencies(env)
-    plan = prepare_daily(
-        deps.gmail,
-        deps.rules,
-        deps.config,
-        deps.classifier,
-        deps.extractor,
-        deps.summarizer,
-        deps.group_summarizer,
-        since=now - timedelta(hours=hours),
-        until=now,
-        keep_in_inbox=keep_in_inbox,
-    )
+    try:
+        deps = build_dependencies(env)
+        plan = prepare_daily(
+            deps.gmail,
+            deps.rules,
+            deps.config,
+            deps.classifier,
+            deps.extractor,
+            deps.summarizer,
+            deps.group_summarizer,
+            since=now - timedelta(hours=hours),
+            until=now,
+            keep_in_inbox=keep_in_inbox,
+        )
+    except SignInExpiredError:
+        raise  # its message is ours: it says what to do and contains no secret
+    except Exception as error:
+        if env.get("DETAILED_ERRORS", "false").strip().lower() == "true":
+            raise  # deliberate debugging only: the full error may expose secrets in the logs
+        # A library's error text can include request headers (a malformed API key once ended up in
+        # the logs this way), so only the error TYPE is kept, and the original is not chained.
+        message = f"daily run failed while preparing: {type(error).__name__}"
+        log.error(message)
+        raise JobFailedError(message) from None
     log.info(
         "daily plan: %d mails in the last %g hours, %d to label, %d bill rows, dry_run=%s",
         plan.content.total,
