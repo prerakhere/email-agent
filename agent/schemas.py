@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, computed_field
 class Category(StrEnum):
     BILLS = "bills"
     RECEIPTS = "receipts"
+    TRANSACTIONS = "transactions"
     NEWSLETTERS = "newsletters"
     PROMOTIONS = "promotions"
     IMPORTANT = "important"

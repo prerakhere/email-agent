@@ -10,6 +10,7 @@ from agent.nodes.classify import (
     BATCH_SIZE,
     BODY_CHARS,
     DEFAULT_CONCURRENCY,
+    SYSTEM_PROMPT,
     LLMBatch,
     LLMItem,
     build_classifier,
@@ -308,3 +309,26 @@ def test_a_400_that_is_not_a_content_filter_is_not_swallowed():
 
     with pytest.raises(openai.BadRequestError):
         classify_many([make_email()], RunnableLambda(other_400))
+
+
+# ---- guidance that separates look-alike mail ----
+
+
+def test_a_single_payment_alert_is_a_transaction_but_a_statement_is_a_bill():
+    text = SYSTEM_PROMPT.lower()
+    assert "transactions:" in text and "upi" in text and "card" in text
+    assert "statement" in text and "bill is due" in text
+    assert "not a bill" in text  # an alert about one payment is not a bill
+
+
+def test_declined_or_failed_payment_attempts_are_notifications_not_transactions():
+    # The user acts on these at once, so by the next day they are stale: a one-line roundup at most.
+    text = SYSTEM_PROMPT.lower()
+    assert "declined, rejected or failed" in text
+    assert "notifications" in text
+
+
+def test_lender_marketing_is_a_promotion_even_when_it_reads_like_account_news():
+    text = SYSTEM_PROMPT.lower()
+    assert "emi" in text and "limit" in text
+    assert "bill needs" in text  # a bill needs a specific amount due or a payment made

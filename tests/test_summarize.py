@@ -229,7 +229,8 @@ def test_the_built_chain_asks_for_the_summary_shape_with_the_full_prompt():
     text = captured["text"].lower()
     assert "be brief." in text  # the section's style reaches the model
     assert "untrusted" in text  # emails are data, not instructions
-    assert "two sentences" in text
+    assert "one short sentence" in text  # next-day review: one line at most
+    assert "two sentences" not in text
     assert "never write" in text and "link" in text  # no model-written URLs
 
 
@@ -392,3 +393,10 @@ def test_the_group_chain_asks_for_the_group_shape_with_the_full_prompt():
     assert "be brief." in text and "untrusted" in text
     assert "never write" in text and "link" in text
     assert "at most 5" in text  # the section's max_items
+
+
+def test_a_group_paragraph_is_one_short_sentence():
+    from agent.nodes.summarize import GROUP_SYSTEM_PROMPT
+
+    text = GROUP_SYSTEM_PROMPT.lower()
+    assert "one short sentence" in text and "three sentences" not in text

@@ -28,8 +28,16 @@ Allowed categories (use the exact value):
 {categories}
 
 Guidance:
-- bills: statements or invoices with an amount and due date (cards, utilities, subscriptions).
+- bills: statements or invoices with an amount and due date (cards, utilities, subscriptions). A
+  credit card statement or a "bill is due" notice is a bill. A bill needs a specific amount due
+  or a payment made: a bank or lender's marketing (EMI cards, loan offers, limit upgrades,
+  cashback) is a promotion even when it is worded like account news.
 - receipts: order or payment confirmations needing no action.
+- transactions: a routine alert about ONE payment or money movement (a UPI payment, a card
+  purchase, a bank debit or credit), such as "You have done a UPI txn" or "Rs 450 spent on your
+  card". It is not a bill or a statement. Boilerplate like "report if you did not make this" does
+  not change that. Declined, rejected or failed payment attempts are notifications, not
+  transactions: they are acted on at once and stale by the next day.
 - newsletters: recurring content you subscribed to.
 - promotions: marketing and offers from stores or banks.
 - important: a real person wrote to the user, or there is a deadline or consequence

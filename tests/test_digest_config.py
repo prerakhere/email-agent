@@ -24,6 +24,7 @@ def test_the_defaults_cover_the_sections_the_digest_needs_in_order():
     assert titles == [
         "Important",
         "Bills and receipts",
+        "Transactions",
         "Job alerts",
         "Newsletters",
         "Promotions",
@@ -162,3 +163,15 @@ def test_body_size_can_be_set_in_the_toml_file(tmp_path):
         '[[sections]]\ntitle = "Reading"\ncategories = ["newsletters"]\nbody_chars = 2500\n'
     )
     assert load_digest_config(path).sections[0].body_chars == 2500
+
+
+def test_transactions_have_their_own_section():
+    section = DEFAULT_CONFIG.section_for(Category.TRANSACTIONS)
+    assert section is not None and section.title == "Transactions"
+
+
+def test_every_default_section_asks_for_a_single_line():
+    # The digest is a next-day review: one line at most per item.
+    for section in DEFAULT_CONFIG.sections:
+        assert "line" in section.style.lower(), section.title
+        assert "two sentences" not in section.style.lower(), section.title

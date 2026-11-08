@@ -20,6 +20,7 @@ PREFERRED_EXISTING: dict[Category, tuple[str, ...]] = {
 AGENT_FALLBACK: dict[Category, str] = {
     Category.BILLS: "Agent/Bills",
     Category.RECEIPTS: "Agent/Receipts",
+    Category.TRANSACTIONS: "Agent/Transactions",
     Category.NEWSLETTERS: "Agent/Newsletters",
     Category.PROMOTIONS: "Agent/Promotions",
     Category.IMPORTANT: "Agent/Important",

@@ -92,3 +92,8 @@ def test_an_agent_label_wins_over_one_of_the_users_folders():
 def test_labels_that_say_nothing_about_a_category_give_none():
     assert category_for_labels(["Job Applications", "Random"]) is None
     assert category_for_labels([]) is None
+
+
+def test_transactions_get_their_own_agent_label():
+    assert resolve_label(Category.TRANSACTIONS, REAL_LABELS) == "Agent/Transactions"
+    assert category_for_labels(["Agent/Transactions"]) == Category.TRANSACTIONS

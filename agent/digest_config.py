@@ -65,40 +65,47 @@ DEFAULT_CONFIG = DigestConfig(
             title="Important",
             categories=[Category.IMPORTANT],
             style=(
-                "One or two sentences per email. For recruiter or job-related mail list the "
-                "action points (reply needed, deadline, interview, documents to send)."
+                "One short line per email. If it needs a reply, a deadline or a decision, "
+                "add the action point."
             ),
             max_items=15,
         ),
         DigestSection(
             title="Bills and receipts",
             categories=[Category.BILLS, Category.RECEIPTS],
-            style="Biller, amount and due date if any. Say what each mail is for.",
+            style="One line each: the biller, the amount, and the due date if there is one.",
+        ),
+        DigestSection(
+            title="Transactions",
+            categories=[Category.TRANSACTIONS],
+            style="One line: how many, the total spent, and the largest.",
+            mode="group",
+            max_items=5,
         ),
         DigestSection(
             title="Job alerts",
             categories=[Category.JOB_ALERTS],
-            style="Give the count and the most relevant roles (title and company).",
+            style="One line: the count and the most relevant roles (title and company).",
             mode="group",
             max_items=5,
         ),
         DigestSection(
             title="Newsletters",
             categories=[Category.NEWSLETTERS],
-            style="Two or three key points. Skip pure promotion.",
+            style="One line: the single most important point. Skip pure promotion.",
             body_chars=3000,  # the key points of a newsletter sit lower down
         ),
         DigestSection(
             title="Promotions",
             categories=[Category.PROMOTIONS],
-            style="A short roundup: the count, and the notable brands or offers in a line or two.",
+            style="One short line: the count, and the notable brands or offers.",
             mode="group",
             max_items=5,
         ),
         DigestSection(
             title="Notifications",
             categories=[Category.NOTIFICATIONS],
-            style="A short roundup: the count and what the notifications were about.",
+            style="One short line: the count and what the notifications were about.",
             mode="group",
             max_items=5,
         ),
