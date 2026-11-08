@@ -3,9 +3,10 @@ from datetime import UTC, datetime
 
 from langchain_core.runnables import RunnableLambda
 
-from agent.graph import build_graph, collect_bill_items
+from agent.graph import build_graph, collect_bill_items, collect_transactions
 from agent.nodes.classify import DEFAULT_CONCURRENCY, LLMBatch, LLMItem
 from agent.nodes.extract import LLMBill
+from agent.nodes.transactions import LLMTransactionBatch, LLMTransactionItem
 from agent.schemas import Category, Email
 
 
@@ -459,3 +460,124 @@ def test_day_mode_is_unchanged_and_still_drops_labelled_mail():
     assert gmail.fetch_args == (3, 100) and gmail.since_args is None
     assert [e.id for e in state["emails"]] == ["2"]
     assert state.get("filed_ids", []) == []
+
+
+# ---- transaction alerts: extracted like bills, but only for the transactions category ----
+
+
+class FakeTransactionExtractor:
+    """Stands in for the transaction chain. Records which alerts reached it."""
+
+    def __init__(self):
+        self.seen_subjects: list[str] = []
+        self.runnable = RunnableLambda(self._invoke)
+
+    def _invoke(self, request):
+        subjects = re.findall(r"^Subject: (.*)$", request["emails"], re.MULTILINE)
+        self.seen_subjects.extend(subjects)
+        return LLMTransactionBatch(
+            items=[
+                LLMTransactionItem(index=n, amount=50.0, currency="INR", via="UPI")
+                for n in range(1, len(subjects) + 1)
+            ]
+        )
+
+
+TX_RULES = {"alerts@bank.com": Category.TRANSACTIONS, **BANK_RULES}
+
+
+def test_a_transaction_alert_is_extracted_into_state_transactions():
+    tx = FakeTransactionExtractor()
+    state, _ = run(
+        [make_email("1", "alerts@bank.com", "UPI txn")],
+        FakeChain(),
+        rules=TX_RULES,
+        transaction_extractor=tx.runnable,
+    )
+    assert tx.seen_subjects == ["UPI txn"]
+    assert str(state["transactions"]["1"].amount) == "50.0"
+    assert state["transactions"]["1"].via == "UPI"
+
+
+def test_other_mail_never_reaches_the_transaction_extractor():
+    tx = FakeTransactionExtractor()
+    state, _ = run(
+        [
+            make_email("1", "deals@shop.com", "sale"),
+            make_email("2", "stmt@bank.com", "Statement"),
+        ],
+        FakeChain(Category.PROMOTIONS, 0.9),
+        rules=TX_RULES,
+        transaction_extractor=tx.runnable,
+    )
+    assert tx.seen_subjects == [] and state.get("transactions", {}) == {}
+
+
+def test_without_a_transaction_extractor_nothing_is_extracted_for_alerts():
+    state, _ = run(
+        [make_email("1", "alerts@bank.com", "UPI txn")], FakeChain(), rules=TX_RULES
+    )
+    assert "transactions" not in state
+    assert state["proposals"][0].category == Category.TRANSACTIONS
+
+
+def test_bills_and_transactions_are_extracted_in_the_same_run_each_from_its_own_mail():
+    bills, tx = FakeExtractor(), FakeTransactionExtractor()
+    emails = [
+        make_email("1", "stmt@bank.com", "Statement"),
+        make_email("2", "alerts@bank.com", "UPI txn"),
+    ]
+    state, _ = run(
+        emails,
+        FakeChain(),
+        rules=TX_RULES,
+        extractor=bills.runnable,
+        transaction_extractor=tx.runnable,
+    )
+    assert bills.seen_subjects == ["Statement"] and tx.seen_subjects == ["UPI txn"]
+    assert list(state["bills"]) == ["1"] and list(state["transactions"]) == ["2"]
+
+
+def test_a_low_confidence_transaction_is_needs_review_and_not_extracted():
+    tx = FakeTransactionExtractor()
+    state, _ = run(
+        [make_email("1", "x@other.com", "maybe a payment")],
+        FakeChain(Category.TRANSACTIONS, 0.4),
+        transaction_extractor=tx.runnable,
+    )
+    assert tx.seen_subjects == [] and state.get("transactions", {}) == {}
+
+
+def test_collect_transactions_pairs_each_email_with_its_transaction_in_email_order():
+    tx = FakeTransactionExtractor()
+    emails = [
+        make_email("1", "deals@shop.com", "sale"),
+        make_email("2", "alerts@bank.com", "first"),
+        make_email("3", "alerts@bank.com", "second"),
+    ]
+    state, _ = run(
+        emails,
+        FakeChain(Category.PROMOTIONS, 0.9),
+        rules=TX_RULES,
+        transaction_extractor=tx.runnable,
+    )
+    assert [(e.id, t.email_id) for e, t in collect_transactions(state)] == [
+        ("2", "2"),
+        ("3", "3"),
+    ]
+
+
+def test_the_agents_own_labels_can_be_rechecked_while_the_users_folders_stay_trusted():
+    chain = FakeChain(Category.TRANSACTIONS, 0.9)
+    emails = [
+        labelled("1", "L_jobs", subject="alert the agent labelled earlier"),
+        labelled("2", "L_news", subject="filed by the user"),
+    ]
+    ids = {**LABEL_IDS, "Newsletters": "L_news"}
+    state, _ = run(emails, chain, label_ids=ids, since=SINCE, trust_agent_labels=False)
+    assert chain.seen_subjects == ["alert the agent labelled earlier"]  # re-classified
+    assert state["classifications"]["1"].category == Category.TRANSACTIONS
+    assert (
+        state["classifications"]["2"].category == Category.NEWSLETTERS
+    )  # the user's folder wins
+    assert state["proposals"] == []  # filed mail never gets a second label

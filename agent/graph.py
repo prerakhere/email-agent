@@ -1,5 +1,5 @@
 """The LangGraph pipeline: fetch -> prefilter -> classify -> propose, then (only if there are
-bills/receipts and an extractor was given) extract. The graph never writes anywhere: acting on
+bills/receipts or transaction alerts and the matching extractor was given) extract. The graph never writes anywhere: acting on
 its output (labelling, logging to the sheet) is a separate, lock-guarded step.
 
 State is one shared typed dict. Each node is a plain function that returns only the keys it
@@ -17,6 +17,7 @@ from agent.labels import category_for_labels, resolve_label
 from agent.nodes.classify import BATCH_SIZE, DEFAULT_CONCURRENCY, classify_many
 from agent.nodes.extract import extract_bill
 from agent.nodes.prefilter import prefilter
+from agent.nodes.transactions import Transaction, extract_transactions
 from agent.schemas import Bill, Category, Classification, Email, Proposal
 
 BILLING = {Category.BILLS, Category.RECEIPTS}
@@ -31,6 +32,8 @@ class AgentState(TypedDict, total=False):
     label_names_by_id: dict[str, str]
     # keyed by email id; only bills/receipts with a usable amount
     bills: dict[str, Bill]
+    # keyed by email id; only transaction alerts with a usable amount
+    transactions: dict[str, Transaction]
 
 
 def build_graph(
@@ -40,9 +43,11 @@ def build_graph(
     days: int = 3,
     max_results: int = 100,
     extractor: Runnable | None = None,
+    transaction_extractor: Runnable | None = None,
     max_concurrency: int = DEFAULT_CONCURRENCY,
     batch_size: int = BATCH_SIZE,
     since: datetime | None = None,
+    trust_agent_labels: bool = True,
 ):
     def fetch_node(state: AgentState) -> dict:
         ids_by_name = gmail.label_ids_by_name()
@@ -78,7 +83,7 @@ def build_graph(
                     for label_id in email.label_ids
                     if label_id in state["label_names_by_id"]
                 ]
-                category = category_for_labels(names)
+                category = category_for_labels(names, trust_agent_labels)
                 if category is not None:
                     decided[email.id] = Classification(
                         category=category,
@@ -130,20 +135,33 @@ def build_graph(
         return {"proposals": proposals}
 
     def extract_node(state: AgentState) -> dict:
-        bills = {}
-        for email in state["emails"]:
-            if state["classifications"][email.id].category in BILLING:
-                bill = extract_bill(email, extractor)
-                if bill is not None:  # None = no usable amount: nothing safe to log
-                    bills[email.id] = bill
-        return {"bills": bills}
+        """Read amounts out of bill mail and transaction alerts, each with its own extractor."""
+        update: dict = {}
+        if extractor is not None:
+            bills = {}
+            for email in state["emails"]:
+                if state["classifications"][email.id].category in BILLING:
+                    bill = extract_bill(email, extractor)
+                    if bill is not None:  # None = no usable amount: nothing safe to log
+                        bills[email.id] = bill
+            update["bills"] = bills
+        if transaction_extractor is not None:
+            alerts = [
+                e
+                for e in state["emails"]
+                if state["classifications"][e.id].category == Category.TRANSACTIONS
+            ]
+            update["transactions"] = extract_transactions(alerts, transaction_extractor)
+        return update
 
     def route_after_propose(state: AgentState) -> str:
         """Conditional edge: the returned string names the next node."""
-        has_billing_mail = any(
-            state["classifications"][e.id].category in BILLING for e in state["emails"]
+        categories = {state["classifications"][e.id].category for e in state["emails"]}
+        wants_bills = extractor is not None and bool(categories & BILLING)
+        wants_transactions = (
+            transaction_extractor is not None and Category.TRANSACTIONS in categories
         )
-        return "extract" if extractor is not None and has_billing_mail else END
+        return "extract" if wants_bills or wants_transactions else END
 
     graph = StateGraph(AgentState)
     graph.add_node("fetch", fetch_node)
@@ -168,3 +186,9 @@ def collect_bill_items(state: AgentState) -> list[tuple[Email, Category, Bill]]:
         for email in state["emails"]
         if email.id in bills
     ]
+
+
+def collect_transactions(state: AgentState) -> list[tuple[Email, Transaction]]:
+    """(email, transaction) for every extracted transaction alert, in email order."""
+    found = state.get("transactions", {})
+    return [(email, found[email.id]) for email in state["emails"] if email.id in found]
