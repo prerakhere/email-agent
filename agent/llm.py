@@ -28,14 +28,17 @@ MAX_OUTPUT_TOKENS = (
 
 
 def build_llm(env: Mapping[str, str] = os.environ) -> AzureChatOpenAI:
-    missing = [name for name in REQUIRED if not env.get(name)]
+    # Values are stripped: a stray newline in a secret once became an illegal HTTP header value and
+    # made every model call fail (and the library's error text then echoed the key into the logs).
+    values = {name: env.get(name, "").strip() for name in REQUIRED}
+    missing = [name for name, value in values.items() if not value]
     if missing:
         raise ValueError(f"Missing settings: {', '.join(missing)}")
     return AzureChatOpenAI(
-        azure_endpoint=env["AZURE_OPENAI_ENDPOINT"],
-        api_key=env["AZURE_OPENAI_API_KEY"],
-        api_version=env["AZURE_OPENAI_API_VERSION"],
-        azure_deployment=env["AZURE_OPENAI_DEPLOYMENT"],
+        azure_endpoint=values["AZURE_OPENAI_ENDPOINT"],
+        api_key=values["AZURE_OPENAI_API_KEY"],
+        api_version=values["AZURE_OPENAI_API_VERSION"],
+        azure_deployment=values["AZURE_OPENAI_DEPLOYMENT"],
         temperature=0,
         max_retries=MAX_RETRIES,
         max_tokens=MAX_OUTPUT_TOKENS,

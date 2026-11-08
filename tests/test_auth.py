@@ -71,3 +71,8 @@ def test_an_expired_or_revoked_sign_in_has_its_own_clear_error(monkeypatch):
         refreshed_credentials(env())
     assert "refresh-token-789" not in str(caught.value)
     assert "client-secret-456" not in str(caught.value)
+
+
+def test_a_trailing_newline_around_the_token_setting_is_harmless():
+    creds = credentials_from_env({"GOOGLE_TOKEN_JSON": json.dumps(TOKEN) + "\n"})
+    assert creds.refresh_token == "refresh-token-789"

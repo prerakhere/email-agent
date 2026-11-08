@@ -36,3 +36,19 @@ def test_replies_are_capped_so_each_call_reserves_little_of_the_token_quota():
     assert (
         1000 <= MAX_OUTPUT_TOKENS <= 2000
     )  # ten short answers fit; far below the default
+
+
+def test_stray_whitespace_in_a_setting_never_reaches_the_client():
+    # A trailing newline in the key once made every model call fail with an illegal header value.
+    dirty = {name: f"  {value}\n" for name, value in ENV.items()}
+    llm = build_llm(dirty)
+    assert llm.openai_api_key.get_secret_value() == ENV["AZURE_OPENAI_API_KEY"]
+    assert llm.azure_endpoint == ENV["AZURE_OPENAI_ENDPOINT"].strip()
+    assert llm.openai_api_version == ENV["AZURE_OPENAI_API_VERSION"]
+    assert llm.deployment_name == ENV["AZURE_OPENAI_DEPLOYMENT"]
+
+
+def test_a_whitespace_only_setting_counts_as_missing():
+    blank = {**ENV, "AZURE_OPENAI_API_KEY": " \n"}
+    with pytest.raises(ValueError, match="AZURE_OPENAI_API_KEY"):
+        build_llm(blank)
