@@ -56,3 +56,14 @@ def test_it_targets_this_projects_resources_only():
         "gmail-agent-func-pj01",
     ):
         assert name in CODE
+
+
+def test_the_app_is_told_to_re_resolve_the_key_so_it_never_keeps_the_revoked_copy():
+    # A Key Vault reference caches its value: after a rotation the app kept the OLD key and every
+    # model call failed with 401 until the setting was re-saved.
+    assert "az functionapp config appsettings set" in CODE
+    assert (
+        "AZURE_OPENAI_API_KEY=@Microsoft.KeyVault(VaultName=$KV;SecretName=azure-openai-api-key)"
+        in CODE
+    )
+    assert CODE.index("az keyvault secret set") < CODE.index("appsettings set")
