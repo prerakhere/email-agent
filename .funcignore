@@ -1,0 +1,24 @@
+# Files that must NOT be uploaded with the Function app (secrets, personal notes, dev-only files).
+# rules.json and digest.toml are deliberately NOT listed: the app reads them at run time.
+.env
+.env.example
+token*.json
+credentials*.json
+local.settings.json
+local.settings.json.example
+digest_preview.html
+WORKLOG.md
+LEARNING.md
+CLAUDE.md
+.claude
+.git
+.gitignore
+.venv
+.python-version
+.pytest_cache
+.ruff_cache
+__pycache__
+tests
+scripts
+uv.lock
+pyproject.toml
