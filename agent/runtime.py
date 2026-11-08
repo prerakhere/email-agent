@@ -20,6 +20,7 @@ from agent.llm import build_llm
 from agent.nodes.classify import build_classifier
 from agent.nodes.extract import build_extractor
 from agent.nodes.summarize import build_group_summarizer, build_summarizer
+from agent.nodes.transactions import build_transaction_extractor
 from agent.rules import load_rules
 from agent.sheets_client import SheetsClient
 
@@ -50,4 +51,5 @@ def build_dependencies(env: Mapping[str, str], root: Path = APP_ROOT) -> Depende
         extractor=build_extractor(llm),
         summarizer=build_summarizer(llm),
         group_summarizer=build_group_summarizer(llm),
+        transaction_extractor=build_transaction_extractor(llm),
     )

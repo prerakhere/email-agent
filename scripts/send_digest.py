@@ -28,7 +28,9 @@ from agent.digest_run import create_digest
 from agent.gmail_client import GmailClient
 from agent.llm import REQUIRED, build_llm
 from agent.nodes.classify import build_classifier
+from agent.nodes.extract import build_extractor
 from agent.nodes.summarize import build_group_summarizer, build_summarizer
+from agent.nodes.transactions import build_transaction_extractor
 from agent.rules import load_rules
 
 load_dotenv(ROOT / ".env")
@@ -72,6 +74,8 @@ def main() -> None:
         since=since,
         until=until,
         max_results=args.max_results,
+        extractor=build_extractor(llm),
+        transaction_extractor=build_transaction_extractor(llm),
     )
     args.preview.write_text(rendered.html)
 

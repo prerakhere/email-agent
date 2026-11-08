@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from langchain_core.runnables import RunnableLambda
-from test_daily import EMAILS, FakeGmail, FakeSheets, Models
+from test_daily import EMAILS, FakeGmail, FakeSheets, Models, email
 
 from agent.auth import SignInExpiredError
 from agent.digest_config import DEFAULT_CONFIG
@@ -29,6 +29,7 @@ def make_deps(gmail=None, sheets="default"):
         extractor=models.extractor,
         summarizer=models.summarizer,
         group_summarizer=models.group,
+        transaction_extractor=models.tx_extractor,
     )
 
 
@@ -179,3 +180,11 @@ def test_detailed_errors_can_be_switched_on_for_debugging():
     with pytest.raises(RuntimeError, match="Illegal header") as caught:
         run_scheduled({"DETAILED_ERRORS": "true"}, NOW, exploding_build)
     assert not isinstance(caught.value, JobFailedError)
+
+
+def test_the_scheduled_run_passes_the_transaction_extractor_through():
+    gmail = RecordingGmail([*EMAILS, email("5", "UPI txn alert")])
+    deps = make_deps(gmail=gmail)
+    result, _, _ = run({}, deps)
+    spend = next(s for s in result.content.sections if s.title == "Transactions")
+    assert spend.table is not None and len(spend.table.rows) == 1

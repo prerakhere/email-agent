@@ -40,6 +40,7 @@ class Dependencies:
     extractor: Runnable
     summarizer: Runnable
     group_summarizer: Runnable
+    transaction_extractor: Runnable | None = None
 
 
 class JobFailedError(RuntimeError):
@@ -79,6 +80,7 @@ def run_scheduled(
             since=now - timedelta(hours=hours),
             until=now,
             keep_in_inbox=keep_in_inbox,
+            transaction_extractor=deps.transaction_extractor,
         )
     except SignInExpiredError:
         raise  # its message is ours: it says what to do and contains no secret

@@ -26,10 +26,27 @@ def create_digest(
     since: datetime,
     until: datetime,
     max_results: int = 500,
+    extractor: Runnable | None = None,
+    transaction_extractor: Runnable | None = None,
 ) -> tuple[DigestContent, RenderedDigest]:
-    graph = build_graph(gmail, rules, classifier, since=since, max_results=max_results)
+    graph = build_graph(
+        gmail,
+        rules,
+        classifier,
+        since=since,
+        extractor=extractor,
+        transaction_extractor=transaction_extractor,
+        max_results=max_results,
+    )
     state = graph.invoke({})
     content = build_digest(
-        state["emails"], state["classifications"], config, summarizer, group_summarizer
+        state["emails"],
+        state["classifications"],
+        config,
+        summarizer,
+        group_summarizer,
+        bills=state.get("bills"),
+        transactions=state.get("transactions"),
+        now=until,
     )
     return content, render_digest(content, since, until)

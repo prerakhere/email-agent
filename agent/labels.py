@@ -42,16 +42,20 @@ def resolve_label(category: Category, existing_labels: Collection[str]) -> str:
     return AGENT_FALLBACK[category]
 
 
-def category_for_labels(label_names: Iterable[str]) -> Category | None:
+def category_for_labels(
+    label_names: Iterable[str], trust_agent_labels: bool = True
+) -> Category | None:
     """Read a category back from the labels a message already carries (the reverse of
     resolve_label), so already-filed mail needs no model call. None when no label says.
 
     An Agent/* label wins: it records what the agent itself decided. Otherwise the user's own
-    folders count (Newsletters -> newsletters, ...), the most specific folder first.
+    folders count (Newsletters -> newsletters, ...), the most specific folder first. With
+    `trust_agent_labels=False` the agent's own labels are ignored (they are only its earlier
+    guesses, to be re-checked) while the user's own folders, which are ground truth, still count.
     """
     names = list(label_names)
     by_agent_label = {name.lower(): cat for cat, name in AGENT_FALLBACK.items()}
-    for name in names:
+    for name in names if trust_agent_labels else []:
         if name.lower() in by_agent_label:
             return by_agent_label[name.lower()]
     folders = labels_to_categories(names)

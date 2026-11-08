@@ -46,6 +46,10 @@ def test_gmail_and_sheets_clients_are_built_with_the_refreshed_credentials(
     assert deps.gmail is not None and deps.sheets is not None
 
 
+def test_the_transaction_extractor_is_built_too(google, tmp_path):
+    assert build_dependencies(ENV, root=tmp_path).transaction_extractor is not None
+
+
 def test_without_a_sheet_id_there_is_no_sheets_client(google, tmp_path):
     env = {k: v for k, v in ENV.items() if k != "SHEET_ID"}
     deps = build_dependencies(env, root=tmp_path)

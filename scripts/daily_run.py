@@ -31,6 +31,7 @@ from agent.llm import REQUIRED, build_llm
 from agent.nodes.classify import build_classifier
 from agent.nodes.extract import build_extractor
 from agent.nodes.summarize import build_group_summarizer, build_summarizer
+from agent.nodes.transactions import build_transaction_extractor
 from agent.rules import load_rules
 from agent.sheets_client import SheetsClient
 
@@ -84,6 +85,7 @@ def main() -> None:
         until=until,
         keep_in_inbox=keep_in_inbox,
         max_results=args.max_results,
+        transaction_extractor=build_transaction_extractor(llm),
     )
     args.preview.write_text(plan.rendered.html)
 

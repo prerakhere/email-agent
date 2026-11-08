@@ -97,3 +97,16 @@ def test_labels_that_say_nothing_about_a_category_give_none():
 def test_transactions_get_their_own_agent_label():
     assert resolve_label(Category.TRANSACTIONS, REAL_LABELS) == "Agent/Transactions"
     assert category_for_labels(["Agent/Transactions"]) == Category.TRANSACTIONS
+
+
+def test_agent_labels_can_be_ignored_while_the_users_own_folders_still_count():
+    assert category_for_labels(["Agent/Promotions"], trust_agent_labels=False) is None
+    assert (
+        category_for_labels(["Newsletters"], trust_agent_labels=False)
+        == Category.NEWSLETTERS
+    )
+    both = ["Newsletters", "Agent/Promotions"]
+    assert category_for_labels(both, trust_agent_labels=False) == Category.NEWSLETTERS
+    assert (
+        category_for_labels(both) == Category.PROMOTIONS
+    )  # trusted by default: unchanged

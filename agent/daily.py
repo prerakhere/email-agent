@@ -99,6 +99,7 @@ def prepare_daily(
     until: datetime,
     keep_in_inbox: bool = True,
     max_results: int = 500,
+    transaction_extractor: Runnable | None = None,
 ) -> DailyPlan:
     """Read the window, classify once, summarise and render. Changes and sends nothing."""
     graph = build_graph(
@@ -107,7 +108,11 @@ def prepare_daily(
         classifier,
         since=since,
         extractor=extractor,
+        transaction_extractor=transaction_extractor,
         max_results=max_results,
+        # The agent's own earlier labels are only guesses: re-check them with the current classifier
+        # so improving the classifier improves the digest at once. The user's own folders stay trusted.
+        trust_agent_labels=False,
     )
     # Each stage is logged (name and elapsed seconds only, never content) so a stall shows where:
     # the last line printed is the last stage that finished.
@@ -120,7 +125,14 @@ def prepare_daily(
             log.info("stage %s done after %.0fs", node, time.monotonic() - started)
     log.info("stage digest started")
     content = build_digest(
-        state["emails"], state["classifications"], config, summarizer, group_summarizer
+        state["emails"],
+        state["classifications"],
+        config,
+        summarizer,
+        group_summarizer,
+        bills=state.get("bills"),
+        transactions=state.get("transactions"),
+        now=until,
     )
     log.info("stage digest done after %.0fs", time.monotonic() - started)
     return DailyPlan(
@@ -179,6 +191,7 @@ def run_daily(
     apply: bool = False,
     keep_in_inbox: bool = True,
     max_results: int = 500,
+    transaction_extractor: Runnable | None = None,
 ) -> DailyResult:
     """prepare_daily, then execute_daily only when `apply` is set."""
     plan = prepare_daily(
@@ -193,5 +206,6 @@ def run_daily(
         until,
         keep_in_inbox=keep_in_inbox,
         max_results=max_results,
+        transaction_extractor=transaction_extractor,
     )
     return execute_daily(plan, gmail, sheets) if apply else DailyResult(plan=plan)

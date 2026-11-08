@@ -10,6 +10,7 @@ from agent.digest_config import DEFAULT_CONFIG
 from agent.nodes.classify import LLMBatch, LLMItem
 from agent.nodes.extract import LLMBill
 from agent.nodes.summarize import GroupText, SummaryBatch, SummaryItem
+from agent.nodes.transactions import LLMTransactionBatch, LLMTransactionItem
 from agent.schemas import Category, Email
 
 SINCE = datetime(2026, 11, 8, 0, 30, tzinfo=UTC)  # 6:00 AM IST
@@ -74,6 +75,8 @@ class Models:
 
     def __init__(self):
         self.classified: list[str] = []
+        self.summarized: list[str] = []
+        self.tx_extractor = RunnableLambda(self._tx)
         self.classifier = RunnableLambda(self._classify)
         self.extractor = RunnableLambda(self._extract)
         self.summarizer = RunnableLambda(self._summarize)
@@ -83,7 +86,9 @@ class Models:
         items = []
         for n, subject in enumerate(subjects_in(request), start=1):
             self.classified.append(subject)
-            if subject.startswith("Statement"):
+            if subject.startswith("UPI"):
+                category = Category.TRANSACTIONS
+            elif subject.startswith("Statement"):
                 category = Category.BILLS
             elif subject.startswith("Interview"):
                 category = Category.IMPORTANT
@@ -103,7 +108,19 @@ class Models:
             confidence=0.9,
         )
 
+    def _tx(self, request):
+        n = len(subjects_in(request))
+        return LLMTransactionBatch(
+            items=[
+                LLMTransactionItem(
+                    index=i, amount=50.0, currency="INR", payee="Cafe", via="UPI"
+                )
+                for i in range(1, n + 1)
+            ]
+        )
+
     def _summarize(self, request):
+        self.summarized.extend(subjects_in(request))
         return SummaryBatch(
             items=[
                 SummaryItem(index=n, summary=f"About {s}.")
@@ -168,7 +185,10 @@ def test_a_real_run_logs_bills_labels_unlabelled_mail_and_sends_the_digest():
 
 def test_mail_is_classified_once_not_once_for_labels_and_again_for_the_digest():
     _, _, _, models = go()
+    # the agent's own earlier label is re-checked in the digest window, so "5 new jobs" is asked too;
+    # each mail is asked about exactly once
     assert sorted(models.classified) == [
+        "5 new jobs",
         "Interview next week",
         "Statement for October",
         "Weekly reading",
@@ -319,3 +339,56 @@ def test_a_stage_that_has_started_is_logged_before_it_finishes(caplog):
     assert logged.index("stage digest started") < logged.index(
         next(line for line in logged if line.startswith("stage digest done"))
     )
+
+
+# ---- transaction alerts become a table: extracted, never summarised one by one ----
+
+TX_EMAILS = [*EMAILS, email("5", "UPI txn alert")]
+
+
+def test_a_transaction_alert_becomes_a_table_row_and_is_never_sent_for_summary():
+    models = Models()
+    gmail = FakeGmail(TX_EMAILS)
+    plan = prepare_daily(
+        gmail,
+        {},
+        DEFAULT_CONFIG,
+        models.classifier,
+        models.extractor,
+        models.summarizer,
+        models.group,
+        since=SINCE,
+        until=UNTIL,
+        transaction_extractor=models.tx_extractor,
+    )
+    titles = {s.title: s for s in plan.content.sections}
+    spend = titles["Transactions"]
+    assert spend.mode == "table" and [r.cells for r in spend.table.rows] == [
+        ["INR 50.00", "UPI", "Cafe"]
+    ]
+    assert "UPI txn alert" not in models.summarized  # a table needs no per-mail summary
+    bills = titles["Bills and receipts"]
+    assert bills.mode == "table" and bills.table.rows[0].cells[1] == "HDFC Bank"
+
+
+def test_the_transaction_table_is_in_the_email_that_gets_sent():
+    models = Models()
+    gmail = FakeGmail(TX_EMAILS)
+    result = run_daily(
+        gmail,
+        None,
+        {},
+        DEFAULT_CONFIG,
+        models.classifier,
+        models.extractor,
+        models.summarizer,
+        models.group,
+        since=SINCE,
+        until=UNTIL,
+        apply=True,
+        transaction_extractor=models.tx_extractor,
+    )
+    assert result.errors == []
+    _subject, text, html = gmail.sent[0]
+    assert "<table" in html and "1 transaction" in html and "INR 50.00" in html
+    assert "1 transaction" in text and "UPI | Cafe" in text
