@@ -79,7 +79,10 @@ def test_each_email_lands_in_the_section_that_owns_its_category():
     result, _ = digest(pairs)
     (section,) = result.sections
     assert section.title == "Bills and receipts" and section.count == 2
-    assert [i.email_id for i in section.items] == ["1", "2"]  # ties keep arrival order
+    # Bills are a table now: with no amounts extracted, both mails are listed as "no amount found",
+    # in arrival order, and nothing is sent to the model for them.
+    assert section.mode == "table" and section.table.rows == []
+    assert [r.email_id for r in section.table.unlisted] == ["1", "2"]
 
 
 def test_newest_mail_comes_first_and_mail_without_a_date_goes_last():

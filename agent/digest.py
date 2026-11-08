@@ -1,43 +1,40 @@
 """Assemble the digest: route each email to its section, then summarise what will be shown.
 
-Pure orchestration over the config and the two summarisers; it sends nothing and writes nothing.
+Pure orchestration over the config and the summarisers; it sends nothing and writes nothing.
 Only mail that will actually appear is sent to the model: a per-email section summarises its
-newest `max_items` and just counts the rest, and mail whose category no section covers is only
-counted.
+newest `max_items` and just counts the rest, a group section gets one line, a table section needs
+no model at all (its rows come from amounts already extracted), and mail whose category no section
+covers is only counted.
 """
 
+from datetime import datetime
 from typing import Literal
 
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
 from agent.digest_config import DigestConfig, DigestSection
+from agent.digest_tables import EmailRef, TableData, bills_table, transactions_table
 from agent.nodes.summarize import (
     EmailSummary,
     GroupSummary,
     summarize_emails,
     summarize_group,
 )
-from agent.schemas import Classification, Email
-
-
-class EmailRef(BaseModel):
-    """Enough to show a clickable line for an email in a group section."""
-
-    email_id: str
-    sender: str
-    subject: str
+from agent.nodes.transactions import Transaction
+from agent.schemas import Bill, Classification, Email
 
 
 class SectionSummary(BaseModel):
     title: str
-    mode: Literal["per_email", "group"]
+    mode: Literal["per_email", "group", "table"]
     count: int  # every email in the section
     items: list[EmailSummary] = Field(
         default_factory=list
     )  # per_email: the newest max_items
     omitted: int = 0  # per_email: emails beyond max_items that were not summarised
     group: GroupSummary | None = None  # group mode
+    table: TableData | None = None  # table mode
     refs: list[EmailRef] = Field(
         default_factory=list
     )  # group mode: first max_items emails
@@ -65,8 +62,21 @@ def _summarise_section(
     emails: list[Email],
     per_email_chain: Runnable,
     group_chain: Runnable,
+    classifications: dict[str, Classification],
+    bills: dict[str, Bill],
+    transactions: dict[str, Transaction],
+    now: datetime | None,
 ) -> SectionSummary:
     ordered = _newest_first(emails)
+    if section.mode == "table":
+        table = (
+            bills_table(ordered, classifications, bills, section.max_items, now)
+            if section.table == "bills"
+            else transactions_table(ordered, transactions, section.max_items)
+        )
+        return SectionSummary(
+            title=section.title, mode="table", count=len(ordered), table=table
+        )
     if section.mode == "group":
         return SectionSummary(
             title=section.title,
@@ -94,6 +104,9 @@ def build_digest(
     config: DigestConfig,
     per_email_chain: Runnable,
     group_chain: Runnable,
+    bills: dict[str, Bill] | None = None,
+    transactions: dict[str, Transaction] | None = None,
+    now: datetime | None = None,
 ) -> DigestContent:
     by_section: dict[str, list[Email]] = {s.title: [] for s in config.sections}
     other = 0
@@ -104,7 +117,16 @@ def build_digest(
         else:
             by_section[section.title].append(email)
     sections = [
-        _summarise_section(s, by_section[s.title], per_email_chain, group_chain)
+        _summarise_section(
+            s,
+            by_section[s.title],
+            per_email_chain,
+            group_chain,
+            classifications,
+            bills or {},
+            transactions or {},
+            now,
+        )
         for s in config.sections
         if by_section[s.title]
     ]

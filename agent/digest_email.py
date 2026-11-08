@@ -13,7 +13,8 @@ from html import escape
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from agent.digest import DigestContent, EmailRef, SectionSummary
+from agent.digest import DigestContent, SectionSummary
+from agent.digest_tables import EmailRef, TableData
 from agent.nodes.summarize import EmailSummary
 from agent.sheets_client import email_link
 
@@ -64,9 +65,25 @@ def _text_entry(item: EmailSummary) -> list[str]:
     return lines
 
 
+def _text_table(table: TableData) -> list[str]:
+    lines = [table.summary, " | ".join(table.columns) + " | Mail"]
+    for row in table.rows:
+        mark = "! " if row.highlight else "  "
+        lines.append(f"{mark}{' | '.join(row.cells)} | {_link(row.email_id)}")
+    if table.omitted:
+        lines.append(f"+{table.omitted} more not shown")
+    if table.unlisted:
+        lines.append("No amount found:")
+        for ref in table.unlisted:
+            lines += [f"* {ref.subject} - {ref.sender}", f"  {_link(ref.email_id)}"]
+    return lines
+
+
 def _text_section(section: SectionSummary) -> list[str]:
     lines = ["", f"{section.title} ({section.count})", "-" * 30]
-    if section.mode == "group":
+    if section.mode == "table" and section.table is not None:
+        lines += _text_table(section.table)
+    elif section.mode == "group":
         group = section.group
         lines.append(NO_SUMMARY if group is None or group.fallback else group.summary)
         for ref in section.refs:
@@ -126,9 +143,45 @@ def _html_ref(ref: EmailRef) -> str:
     )
 
 
+def _html_table(table: TableData) -> str:
+    header = (
+        "<tr>"
+        + "".join(
+            f'<th style="text-align:left;padding:2px 12px 2px 0">{escape(c)}</th>'
+            for c in table.columns
+        )
+        + "<th></th></tr>"
+    )
+    rows = []
+    for row in table.rows:
+        cells = "".join(
+            f"<td><b>{escape(c)}</b></td>" if row.highlight else f"<td>{escape(c)}</td>"
+            for c in row.cells
+        )
+        rows.append(f"<tr>{cells}<td>{_anchor(row.email_id, 'open')}</td></tr>")
+    parts = [
+        f'<p style="color:#444">{escape(table.summary)}</p>',
+        '<table style="border-collapse:collapse;font-size:14px">'
+        + header
+        + "".join(rows)
+        + "</table>",
+    ]
+    if table.omitted:
+        parts.append(f"<p>+{table.omitted} more not shown</p>")
+    if table.unlisted:
+        parts.append(
+            "<p>No amount found:</p><ul>"
+            + "".join(_html_ref(r) for r in table.unlisted)
+            + "</ul>"
+        )
+    return "".join(parts)
+
+
 def _html_section(section: SectionSummary) -> str:
     parts = [f"<h2>{escape(section.title)} ({section.count})</h2>"]
-    if section.mode == "group":
+    if section.mode == "table" and section.table is not None:
+        parts.append(_html_table(section.table))
+    elif section.mode == "group":
         group = section.group
         text = NO_SUMMARY if group is None or group.fallback else group.summary
         parts.append(f"<p>{escape(text)}</p>")

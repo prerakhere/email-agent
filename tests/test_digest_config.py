@@ -165,6 +165,14 @@ def test_body_size_can_be_set_in_the_toml_file(tmp_path):
     assert load_digest_config(path).sections[0].body_chars == 2500
 
 
+def test_bills_and_transactions_are_tables_by_default():
+    bills = DEFAULT_CONFIG.section_for(Category.BILLS)
+    spend = DEFAULT_CONFIG.section_for(Category.TRANSACTIONS)
+    assert (bills.mode, bills.table) == ("table", "bills")
+    assert (spend.mode, spend.table) == ("table", "transactions")
+    assert spend.max_items >= 20  # a busy day has many small payments
+
+
 def test_transactions_have_their_own_section():
     section = DEFAULT_CONFIG.section_for(Category.TRANSACTIONS)
     assert section is not None and section.title == "Transactions"
@@ -175,3 +183,37 @@ def test_every_default_section_asks_for_a_single_line():
     for section in DEFAULT_CONFIG.sections:
         assert "line" in section.style.lower(), section.title
         assert "two sentences" not in section.style.lower(), section.title
+
+
+# ---- table sections: bills and transactions shown as a table, not one summary per mail ----
+
+
+def test_a_table_section_must_say_which_table_it_shows():
+    with pytest.raises(ValueError, match="table"):
+        DigestSection(**section(mode="table"))
+    ok = DigestSection(**section(mode="table", table="bills"))
+    assert ok.mode == "table" and ok.table == "bills"
+
+
+def test_only_known_tables_are_allowed():
+    with pytest.raises(ValueError):
+        DigestSection(**section(mode="table", table="weather"))
+
+
+def test_a_table_name_without_table_mode_is_rejected():
+    with pytest.raises(ValueError, match="table"):
+        DigestSection(**section(mode="per_email", table="bills"))
+
+
+def test_a_table_section_can_be_set_in_the_toml_file(tmp_path):
+    path = tmp_path / "digest.toml"
+    path.write_text(
+        '[[sections]]\ntitle = "Spend"\ncategories = ["transactions"]\n'
+        'mode = "table"\ntable = "transactions"\nmax_items = 30\n'
+    )
+    spend = load_digest_config(path).sections[0]
+    assert (
+        spend.mode == "table"
+        and spend.table == "transactions"
+        and spend.max_items == 30
+    )

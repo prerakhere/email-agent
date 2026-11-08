@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from agent.digest import DigestContent, EmailRef, SectionSummary
 from agent.digest_email import render_digest
+from agent.digest_tables import TableData, TableRow
 from agent.nodes.summarize import EmailSummary, GroupSummary
 
 SINCE = datetime(2026, 11, 7, 2, 30, tzinfo=UTC)  # 8:00 AM IST on 7 Nov
@@ -139,3 +140,100 @@ def test_an_empty_window_says_so():
 def test_the_text_version_has_no_html_tags():
     rendered = render([important([entry(points=["Do it"])]), group_section()], other=2)
     assert not re.search(r"</?(p|ul|li|div|h2|a|b|i|span)\b", rendered.text)
+
+
+# ---- table sections ----
+
+
+def table_section(
+    rows=None, omitted=0, unlisted=(), summary="2 bills: INR 7,000.00", highlight=False
+):
+    rows = (
+        rows
+        if rows is not None
+        else [
+            TableRow(
+                email_id="b1",
+                cells=["bill", "HDFC Bank", "INR 5,633.00", "2026-11-09"],
+                highlight=highlight,
+            ),
+            TableRow(
+                email_id="b2", cells=["receipt", "Amazon.in", "INR 85,004.00", "-"]
+            ),
+        ]
+    )
+    return SectionSummary(
+        title="Bills and receipts",
+        mode="table",
+        count=len(rows) + len(unlisted),
+        table=TableData(
+            columns=["Type", "Biller", "Amount", "Due"],
+            rows=rows,
+            omitted=omitted,
+            summary=summary,
+            unlisted=list(unlisted),
+        ),
+    )
+
+
+def test_a_table_section_renders_a_real_table_with_a_header_and_a_link_per_row():
+    html = render([table_section()]).html
+    assert "Bills and receipts (2)" in html
+    assert "<table" in html and html.count("<tr") == 3  # header plus two rows
+    for heading in ("Type", "Biller", "Amount", "Due"):
+        assert "<th" in html and heading in html
+    assert "<td>HDFC Bank</td>" in html and "<td>INR 85,004.00</td>" in html
+    assert 'href="https://mail.google.com/mail/u/0/#all/b1"' in html
+    assert 'href="https://mail.google.com/mail/u/0/#all/b2"' in html
+
+
+def test_the_totals_line_sits_above_the_table_and_is_escaped():
+    html = render([table_section(summary="2 bills <b>x</b>")]).html
+    assert html.index("2 bills") < html.index("<table")
+    assert "&lt;b&gt;x&lt;/b&gt;" in html
+
+
+def test_a_row_that_needs_attention_is_visibly_highlighted():
+    html = render([table_section(highlight=True)]).html
+    first_row = html.split("<tr")[2]  # [0] is before the table, [1] is the header
+    second_row = html.split("<tr")[3]
+    assert "<b>" in first_row and "<b>" not in second_row
+
+
+def test_table_text_from_mail_is_escaped():
+    rows = [
+        TableRow(email_id="t1", cells=["INR 50.00", "UPI", "<script>alert(1)</script>"])
+    ]
+    html = render([table_section(rows=rows)]).html
+    assert "<script" not in html and "&lt;script&gt;" in html
+
+
+def test_mail_with_no_amount_is_listed_below_the_table_as_linked_subjects():
+    ref = EmailRef(
+        email_id="u1", sender="Bajaj <i@x.com>", subject="Insta EMI Card offer"
+    )
+    rendered = render([table_section(unlisted=[ref])])
+    assert (
+        "No amount found" in rendered.html and "Insta EMI Card offer" in rendered.html
+    )
+    assert 'href="https://mail.google.com/mail/u/0/#all/u1"' in rendered.html
+    assert (
+        "No amount found" in rendered.text and "Insta EMI Card offer" in rendered.text
+    )
+
+
+def test_rows_beyond_the_limit_are_counted_not_hidden():
+    rendered = render([table_section(omitted=4)])
+    assert "+4 more not shown" in rendered.html and "+4 more not shown" in rendered.text
+
+
+def test_the_text_version_shows_the_same_table_without_html():
+    text = render([table_section(highlight=True)]).text
+    assert "Type | Biller | Amount | Due" in text
+    assert (
+        "! bill | HDFC Bank | INR 5,633.00 | 2026-11-09" in text
+    )  # '!' marks the highlighted row
+    assert "receipt | Amazon.in | INR 85,004.00 | -" in text
+    assert "2 bills: INR 7,000.00" in text
+    assert "https://mail.google.com/mail/u/0/#all/b1" in text
+    assert not re.search(r"</?(table|tr|td|th|b)\b", text)

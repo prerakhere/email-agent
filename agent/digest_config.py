@@ -11,7 +11,7 @@ To change the digest, copy the defaults into `digest.toml` at the repo root (git
     title = "Work"
     categories = ["important", "job_alerts"]
     style = "List action points and deadlines."
-    mode = "per_email"     # or "group"
+    mode = "per_email"     # or "group", or "table" (then also: table = "bills" or "transactions")
     max_items = 10
     body_chars = 1500      # how much of each email the model reads (200 to 3000)
 
@@ -33,10 +33,25 @@ class DigestSection(BaseModel):
     title: str = Field(min_length=1)
     categories: list[Category] = Field(min_length=1)
     style: str = ""  # how the model should summarise this section
-    mode: Literal["per_email", "group"] = "per_email"
+    # per_email: one line per email; group: one line for the whole section; table: rows built from
+    # the amounts extracted from the mail (no model summary), shown as a table.
+    mode: Literal["per_email", "group", "table"] = "per_email"
+    table: Literal["bills", "transactions"] | None = (
+        None  # required when mode is "table"
+    )
     max_items: int = Field(default=10, ge=1)
     # How much of each email's body the model reads (after redaction): more costs more tokens.
     body_chars: int = Field(default=1500, ge=200, le=BODY_PREVIEW_CHARS)
+
+    @model_validator(mode="after")
+    def _table_and_mode_agree(self) -> "DigestSection":
+        if self.mode == "table" and self.table is None:
+            raise ValueError(
+                'a "table" section must say which table: "bills" or "transactions"'
+            )
+        if self.mode != "table" and self.table is not None:
+            raise ValueError('"table" can only be set when mode is "table"')
+        return self
 
 
 class DigestConfig(BaseModel):
@@ -73,14 +88,17 @@ DEFAULT_CONFIG = DigestConfig(
         DigestSection(
             title="Bills and receipts",
             categories=[Category.BILLS, Category.RECEIPTS],
-            style="One line each: the biller, the amount, and the due date if there is one.",
+            style="One line per bill in a table: biller, amount and due date.",
+            mode="table",
+            table="bills",
         ),
         DigestSection(
             title="Transactions",
             categories=[Category.TRANSACTIONS],
-            style="One line: how many, the total spent, and the largest.",
-            mode="group",
-            max_items=5,
+            style="One line of totals above a table: amount, how paid, and payee.",
+            mode="table",
+            table="transactions",
+            max_items=30,  # a busy day has many small payments
         ),
         DigestSection(
             title="Job alerts",
