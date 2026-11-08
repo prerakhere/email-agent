@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -292,3 +293,29 @@ def test_the_plan_remembers_the_inbox_setting_it_was_made_with():
     plan, gmail, _ = prepare(keep_in_inbox=False)
     execute_daily(plan, gmail, FakeSheets())
     assert gmail.added == [] and sorted(i for i, _ in gmail.moved) == ["2", "3"]
+
+
+def test_each_stage_is_logged_with_its_elapsed_time_and_no_email_text(caplog):
+    with caplog.at_level(logging.INFO, logger="gmail_agent.daily"):
+        prepare()
+    logged = [record.getMessage() for record in caplog.records]
+    for stage in ("fetch", "prefilter", "classify", "propose", "extract", "digest"):
+        assert any(f"stage {stage}" in line for line in logged), stage
+    assert all("s" in line for line in logged)  # elapsed seconds are shown
+    text = " ".join(logged)
+    for secret in (
+        "Interview next week",
+        "Statement for October",
+        "Weekly reading",
+        "@x.com",
+    ):
+        assert secret not in text
+
+
+def test_a_stage_that_has_started_is_logged_before_it_finishes(caplog):
+    with caplog.at_level(logging.INFO, logger="gmail_agent.daily"):
+        prepare()
+    logged = [record.getMessage() for record in caplog.records]
+    assert logged.index("stage digest started") < logged.index(
+        next(line for line in logged if line.startswith("stage digest done"))
+    )

@@ -20,3 +20,9 @@ def test_it_runs_at_0030_utc_which_is_6am_in_india():
 def test_a_restart_or_a_missed_run_never_triggers_a_catch_up():
     assert TIMER["runOnStartup"] is False
     assert TIMER["useMonitor"] is False
+
+
+def test_our_logs_are_switched_on_so_python_does_not_drop_them():
+    import logging
+
+    assert logging.getLogger("gmail_agent").level == logging.INFO

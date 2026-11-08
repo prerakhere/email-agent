@@ -1,6 +1,12 @@
 import pytest
 
-from agent.llm import MAX_OUTPUT_TOKENS, MAX_RETRIES, REQUIRED, build_llm
+from agent.llm import (
+    MAX_OUTPUT_TOKENS,
+    MAX_RETRIES,
+    REQUEST_TIMEOUT_SECONDS,
+    REQUIRED,
+    build_llm,
+)
 
 ENV = {
     "AZURE_OPENAI_ENDPOINT": "https://example.cognitiveservices.azure.com/",
@@ -52,3 +58,9 @@ def test_a_whitespace_only_setting_counts_as_missing():
     blank = {**ENV, "AZURE_OPENAI_API_KEY": " \n"}
     with pytest.raises(ValueError, match="AZURE_OPENAI_API_KEY"):
         build_llm(blank)
+
+
+def test_a_stuck_model_call_times_out_instead_of_waiting_ten_minutes():
+    # The library default is 600 seconds per attempt, times the retries.
+    assert build_llm(ENV).request_timeout == REQUEST_TIMEOUT_SECONDS
+    assert 30 <= REQUEST_TIMEOUT_SECONDS <= 120

@@ -14,6 +14,8 @@ happen are returned. An empty window still sends a "No new mail" digest, so a mi
 something broke.
 """
 
+import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -27,6 +29,8 @@ from agent.digest_config import DigestConfig
 from agent.digest_email import RenderedDigest, render_digest
 from agent.graph import build_graph, collect_bill_items
 from agent.schemas import Bill, Category, Email, Proposal
+
+log = logging.getLogger("gmail_agent.daily")
 
 
 @dataclass
@@ -105,10 +109,20 @@ def prepare_daily(
         extractor=extractor,
         max_results=max_results,
     )
-    state = graph.invoke({})
+    # Each stage is logged (name and elapsed seconds only, never content) so a stall shows where:
+    # the last line printed is the last stage that finished.
+    started = time.monotonic()
+    log.info("stage fetch started")
+    state: dict = {}
+    for update in graph.stream({}, stream_mode="updates"):
+        for node, changes in update.items():
+            state.update(changes)
+            log.info("stage %s done after %.0fs", node, time.monotonic() - started)
+    log.info("stage digest started")
     content = build_digest(
         state["emails"], state["classifications"], config, summarizer, group_summarizer
     )
+    log.info("stage digest done after %.0fs", time.monotonic() - started)
     return DailyPlan(
         content=content,
         rendered=render_digest(content, since, until),

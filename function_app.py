@@ -6,6 +6,7 @@ run_on_startup and use_monitor are off on purpose: a restart or a missed run mus
 catch-up, because a catch-up could send the digest twice.
 """
 
+import logging
 import os
 from datetime import UTC, datetime
 
@@ -13,6 +14,9 @@ import azure.functions as func
 
 from agent.job import run_scheduled
 from agent.runtime import build_dependencies
+
+# Python drops INFO records by default; without this our counts-and-stages log lines never exist.
+logging.getLogger("gmail_agent").setLevel(logging.INFO)
 
 app = func.FunctionApp()
 

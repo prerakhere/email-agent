@@ -22,6 +22,9 @@ REQUIRED = [
     "AZURE_OPENAI_DEPLOYMENT",
 ]
 MAX_RETRIES = 8
+# Seconds one model request may take. The library's default is 600 per attempt, times the retries:
+# a stuck connection would silently hold the whole job for ages instead of failing and retrying.
+REQUEST_TIMEOUT_SECONDS = 60
 MAX_OUTPUT_TOKENS = (
     1500  # room for ten short answers, yet far below the default reservation
 )
@@ -42,4 +45,5 @@ def build_llm(env: Mapping[str, str] = os.environ) -> AzureChatOpenAI:
         temperature=0,
         max_retries=MAX_RETRIES,
         max_tokens=MAX_OUTPUT_TOKENS,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
