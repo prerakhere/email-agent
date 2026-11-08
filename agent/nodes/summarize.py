@@ -9,16 +9,14 @@ matched back by id, the shared content-filter retry. What is specific here:
   plant a phishing URL in your digest; the digest adds its own links, built from message ids.
 """
 
-import re
-
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
 from agent.batching import is_content_filter_error, run_in_batches
 from agent.digest_config import DigestSection
+from agent.nodes.blocks import render_email_blocks, strip_links
 from agent.nodes.classify import DEFAULT_CONCURRENCY
-from agent.redact import redact
 from agent.schemas import Email
 
 EMAILS_PER_REQUEST = 5  # fewer than classification: the bodies are longer
@@ -70,32 +68,12 @@ def build_summarizer(llm) -> Runnable:
     return PROMPT | llm.with_structured_output(SummaryBatch)
 
 
-_LINK = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
-
-
-def _clean(text: str) -> str:
-    """Drop URLs and tidy spaces: model text is untrusted and must never carry a link."""
-    return " ".join(_LINK.sub("", text).split())
-
-
-def _render(emails: list[Email], body_chars: int) -> str:
-    """The request text: one numbered block per email, redacted and trimmed (ids start at 1)."""
-    return "\n\n".join(
-        f"<email id={n}>\n"
-        f"From: {email.sender}\n"
-        f"Subject: {redact(email.subject)}\n"
-        f"Body start:\n{redact(email.body_preview)[:body_chars]}\n"
-        f"</email>"
-        for n, email in enumerate(emails, start=1)
-    )
-
-
 def _fallback(email: Email) -> EmailSummary:
     return EmailSummary(
         email_id=email.id,
         sender=email.sender,
         subject=email.subject,
-        summary=_clean(email.subject) or "(no subject)",
+        summary=strip_links(email.subject) or "(no subject)",
         fallback=True,
     )
 
@@ -110,11 +88,11 @@ def _from_reply(chunk: list[Email], reply: SummaryBatch) -> list[EmailSummary]:
     results = []
     for n, email in enumerate(chunk, start=1):
         answer = by_index.get(n)
-        summary = _clean(answer.summary) if answer else ""
+        summary = strip_links(answer.summary) if answer else ""
         if not summary:  # skipped, or blank after cleaning: never invent one
             results.append(_fallback(email))
             continue
-        points = [_clean(p)[:MAX_POINT_CHARS] for p in answer.action_points]
+        points = [strip_links(p)[:MAX_POINT_CHARS] for p in answer.action_points]
         results.append(
             EmailSummary(
                 email_id=email.id,
@@ -140,7 +118,7 @@ def summarize_emails(
         chain,
         make_request=lambda chunk: {
             "style": section.style,
-            "emails": _render(chunk, section.body_chars),
+            "emails": render_email_blocks(chunk, section.body_chars),
         },
         from_reply=_from_reply,
         on_blocked=_fallback,
@@ -192,10 +170,12 @@ def _summarize_piece(
         "style": section.style,
         "max_items": section.max_items,
         "count": total,
-        "emails": _render(emails, min(section.body_chars, GROUP_BODY_CHARS)),
+        "emails": render_email_blocks(
+            emails, min(section.body_chars, GROUP_BODY_CHARS)
+        ),
     }
     try:
-        return _clean(chain.invoke(request).summary)
+        return strip_links(chain.invoke(request).summary)
     except Exception as error:
         if not is_content_filter_error(error):
             raise
