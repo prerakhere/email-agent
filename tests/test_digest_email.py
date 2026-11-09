@@ -287,3 +287,74 @@ def test_a_short_summary_is_left_exactly_as_it_is():
 def test_a_group_summary_is_also_cut_to_one_line():
     html = render([group_section(summary="word " * 80)]).html
     assert "…" in html
+
+
+# ---- Round 1c: honest counts, no useless summaries, stay under Gmail's size limit ----
+
+
+def test_a_group_that_shows_fewer_links_than_it_counts_says_how_many_are_not_shown():
+    section = group_section()
+    section.count = 7
+    rendered = render([section])
+    assert "+6 more not shown" in rendered.html and "+6 more not shown" in rendered.text
+
+
+def test_a_group_that_shows_every_link_adds_no_more_line():
+    section = group_section()
+    section.count = 1
+    assert "more not shown" not in render([section]).html
+
+
+def test_a_summary_that_says_the_mail_was_not_viewable_is_left_out_but_the_subject_stays():
+    useless = entry(
+        subject="Weekly teaching tips",
+        summary="The email content is not viewable in your email client.",
+    )
+    rendered = render([important([useless])])
+    assert "Weekly teaching tips" in rendered.html
+    assert "not viewable" not in rendered.html and "not viewable" not in rendered.text
+    assert "Summary unavailable" not in rendered.html
+
+
+def test_a_normal_summary_mentioning_viewing_is_kept():
+    ok = entry(summary="Invoice ready to view in the portal, due Friday.")
+    assert "Invoice ready to view" in render([important([ok])]).html
+
+
+def big_digest(n=400):
+    items = [
+        entry(f"m{i}", subject=f"Subject number {i} " + "x" * 40, summary="word " * 20)
+        for i in range(n)
+    ]
+    rows = [
+        TableRow(email_id=f"t{i}", cells=["bill", f"Biller {i}", "INR 1.00", "-"])
+        for i in range(n)
+    ]
+    table = SectionSummary(
+        title="Bills",
+        mode="table",
+        count=n,
+        table=TableData(
+            columns=["Type", "Biller", "Amount", "Due"],
+            link_column=1,
+            rows=rows,
+            summary=f"{n} bills",
+        ),
+    )
+    return [important(items), table]
+
+
+def test_a_huge_digest_is_shrunk_below_the_gmail_clip_limit():
+    rendered = render(big_digest())
+    assert len(rendered.html.encode()) < 100_000
+    assert "Shortened" in rendered.html and "Shortened" in rendered.text
+
+
+def test_shrinking_never_hides_the_count_of_what_was_left_out():
+    rendered = render(big_digest())
+    assert "more not shown" in rendered.html
+
+
+def test_a_normal_sized_digest_is_not_shortened():
+    rendered = render([important([entry(), entry("m2")])])
+    assert "Shortened" not in rendered.html and "Shortened" not in rendered.text

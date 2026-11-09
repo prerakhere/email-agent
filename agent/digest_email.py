@@ -7,6 +7,7 @@ Safety rules, because the text comes from strangers' emails and from a model:
 Times are shown in Indian time (the digest is for one person in India).
 """
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parseaddr
@@ -22,6 +23,16 @@ from agent.sheets_client import email_link
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 NO_SUMMARY = "Summary unavailable"
 MAX_LINE_CHARS = 160  # every summary is one line
+MAX_HTML_BYTES = 90_000  # Gmail clips a message at about 102 KB; stay well under it
+SHORTENED_NOTE = "Shortened to fit Gmail's size limit; open Gmail for the rest."
+# (items per per_email section, links per group, rows per table, unlisted per table) per level
+SHRINK_LEVELS = [(15, 3, 40, 5), (5, 0, 15, 0)]
+# A summary that only says the mail could not be read tells the reader nothing.
+_USELESS_SUMMARY = re.compile(
+    r"not (be )?(viewable|displayed|visible)|unable to (view|display|read)"
+    r"|(can(no|')t|could ?n[o']t) be (viewed|displayed|read)",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -55,8 +66,33 @@ def _one_line(text: str) -> str:
     return cut + "…"
 
 
+def _is_useless(item: EmailSummary) -> bool:
+    return not item.fallback and bool(_USELESS_SUMMARY.search(item.summary))
+
+
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _shrink(content: DigestContent, level: int) -> DigestContent:
+    """A copy with each list trimmed harder; what is cut is counted, never silently lost."""
+    max_items, max_refs, max_rows, max_unlisted = SHRINK_LEVELS[level]
+    shrunk = content.model_copy(deep=True)
+    for section in shrunk.sections:
+        if section.mode == "per_email":
+            cut = len(section.items) - max_items
+            if cut > 0:
+                section.items = section.items[:max_items]
+                section.omitted += cut
+        elif section.mode == "group":
+            section.refs = section.refs[:max_refs]
+        elif section.table is not None:
+            cut = len(section.table.rows) - max_rows
+            if cut > 0:
+                section.table.rows = section.table.rows[:max_rows]
+                section.table.omitted += cut
+            section.table.unlisted = section.table.unlisted[:max_unlisted]
+    return shrunk
 
 
 def render_digest(
@@ -65,10 +101,15 @@ def render_digest(
     local_end = until.astimezone(LOCAL_TZ)
     subject = f"Inbox digest, {local_end.day} {local_end:%b}: {_plural(content.total, 'email')}"
     window = f"{_when(since)} to {_when(until)}"
+    shown, note = content, False
+    html = _render_html(shown, window, note)
+    for level in range(len(SHRINK_LEVELS)):
+        if len(html.encode()) <= MAX_HTML_BYTES:
+            break
+        shown, note = _shrink(content, level), True
+        html = _render_html(shown, window, note)
     return RenderedDigest(
-        subject=subject,
-        text=_render_text(content, window),
-        html=_render_html(content, window),
+        subject=subject, text=_render_text(shown, window, note), html=html
     )
 
 
@@ -80,7 +121,10 @@ def _text_entry(item: EmailSummary) -> list[str]:
         f"* {item.subject} - {_sender_name(item.sender)}",
         f"  {_link(item.email_id)}",
     ]
-    lines.append(f"  {NO_SUMMARY}" if item.fallback else f"  {_one_line(item.summary)}")
+    if item.fallback:
+        lines.append(f"  {NO_SUMMARY}")
+    elif not _is_useless(item):
+        lines.append(f"  {_one_line(item.summary)}")
     lines += [f"  - Action: {point}" for point in item.action_points]
     return lines
 
@@ -116,6 +160,8 @@ def _text_section(section: SectionSummary) -> list[str]:
                 f"* {ref.subject} - {_sender_name(ref.sender)}",
                 f"  {_link(ref.email_id)}",
             ]
+        if section.count > len(section.refs):
+            lines.append(f"+{section.count - len(section.refs)} more not shown")
     else:
         for item in section.items:
             lines += _text_entry(item)
@@ -124,7 +170,7 @@ def _text_section(section: SectionSummary) -> list[str]:
     return lines
 
 
-def _render_text(content: DigestContent, window: str) -> str:
+def _render_text(content: DigestContent, window: str, shortened: bool = False) -> str:
     lines = ["Inbox digest", f"{window} ({_plural(content.total, 'email')})"]
     if content.total == 0:
         lines += ["", "No new mail in this window."]
@@ -135,6 +181,8 @@ def _render_text(content: DigestContent, window: str) -> str:
             "",
             f"Plus {_plural(content.other_count, 'other email')} not summarised.",
         ]
+    if shortened:
+        lines += ["", SHORTENED_NOTE]
     return "\n".join(lines) + "\n"
 
 
@@ -146,11 +194,12 @@ def _anchor(email_id: str, label: str) -> str:
 
 
 def _html_entry(item: EmailSummary) -> str:
-    body = (
-        f"<p><i>{NO_SUMMARY}</i></p>"
-        if item.fallback
-        else f"<p>{escape(_one_line(item.summary))}</p>"
-    )
+    if item.fallback:
+        body = f"<p><i>{NO_SUMMARY}</i></p>"
+    elif _is_useless(item):
+        body = ""
+    else:
+        body = f"<p>{escape(_one_line(item.summary))}</p>"
     points = ""
     if item.action_points:
         points = (
@@ -231,6 +280,8 @@ def _html_section(section: SectionSummary) -> str:
         parts.append(f"<p>{escape(text)}</p>")
         if section.refs:
             parts.append("<ul>" + "".join(_html_ref(r) for r in section.refs) + "</ul>")
+        if section.count > len(section.refs):
+            parts.append(f"<p>+{section.count - len(section.refs)} more not shown</p>")
     else:
         parts += [_html_entry(item) for item in section.items]
         if section.omitted:
@@ -238,7 +289,7 @@ def _html_section(section: SectionSummary) -> str:
     return "".join(parts)
 
 
-def _render_html(content: DigestContent, window: str) -> str:
+def _render_html(content: DigestContent, window: str, shortened: bool = False) -> str:
     body = [
         "<h1>Inbox digest</h1>",
         f'<p style="color:#666">{escape(window)} ({_plural(content.total, "email")})</p>',
@@ -250,6 +301,8 @@ def _render_html(content: DigestContent, window: str) -> str:
         body.append(
             f"<p>Plus {_plural(content.other_count, 'other email')} not summarised.</p>"
         )
+    if shortened:
+        body.append(f'<p style="color:#666"><i>{escape(SHORTENED_NOTE)}</i></p>')
     return (
         '<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;'
         'max-width:640px;line-height:1.45">' + "".join(body) + "</div>"
