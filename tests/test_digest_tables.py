@@ -161,10 +161,10 @@ def test_a_transactions_table_shows_amount_how_paid_and_payee_with_credits_marke
         "2": tx("2", "200.00", None, "credit card", "credit"),
     }
     table = run(pairs, TX_CONFIG, transactions=found).sections[0].table
-    assert table.columns == ["Amount", "Via", "To"]
+    assert table.columns == ["To", "Via", "Amount"] and table.link_column == 0
     assert [r.cells for r in table.rows] == [
-        ["₹450.00", "UPI", "Cafe Blue"],
-        ["+₹200.00", "credit card", "-"],
+        ["Cafe Blue", "UPI", "₹450.00"],
+        ["-", "credit card", "+₹200.00"],
     ]
 
 
@@ -267,7 +267,7 @@ def test_bills_that_differ_in_amount_or_due_date_stay_separate():
 def payee_cell(payee, via="UPI"):
     pairs = [(email("1"), Category.TRANSACTIONS)]
     found = {"1": tx("1", payee=payee, via=via)}
-    return run(pairs, TX_CONFIG, transactions=found).sections[0].table.rows[0].cells[2]
+    return run(pairs, TX_CONFIG, transactions=found).sections[0].table.rows[0].cells[0]
 
 
 def test_a_masked_upi_handle_loses_its_asterisks_and_bank_suffix():

@@ -162,9 +162,9 @@ def transactions_table(
         TableRow(
             email_id=tx.email_id,
             cells=[
-                money(tx.amount, tx.currency, "+" if tx.direction == "credit" else ""),
-                tx.via,
                 clean_payee(tx.payee, tx.via),
+                tx.via,
+                money(tx.amount, tx.currency, "+" if tx.direction == "credit" else ""),
             ],
         )
         for tx in found
@@ -191,8 +191,8 @@ def transactions_table(
             )
         summary = " · ".join(parts)
     return TableData(
-        columns=["Amount", "Via", "To"],
-        link_column=2,
+        columns=["To", "Via", "Amount"],
+        link_column=0,
         rows=rows[:max_items],
         omitted=max(len(rows) - max_items, 0),
         summary=summary,

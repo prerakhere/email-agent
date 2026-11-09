@@ -180,7 +180,8 @@ def table_section(
 def test_a_table_section_renders_a_real_table_with_a_header_and_a_link_per_row():
     html = render([table_section()]).html
     assert "Bills and receipts (2)" in html
-    assert "<table" in html and html.count("<tr") == 3  # header plus two rows
+    data = html.split("Bills and receipts (")[1]
+    assert "<table" in data and data.count("<tr") == 3  # header plus two rows
     for heading in ("Type", "Biller", "Amount", "Due"):
         assert "<th" in html and heading in html
     assert ">HDFC Bank</a>" in html and "INR 85,004.00</td>" in html
@@ -190,14 +191,14 @@ def test_a_table_section_renders_a_real_table_with_a_header_and_a_link_per_row()
 
 def test_the_totals_line_sits_above_the_table_and_is_escaped():
     html = render([table_section(summary="2 bills <b>x</b>")]).html
-    assert html.index("2 bills") < html.index("<table")
+    assert html.index("2 bills") < html.rindex("<table")
     assert "&lt;b&gt;x&lt;/b&gt;" in html
 
 
 def test_a_row_that_needs_attention_is_visibly_highlighted():
     html = render([table_section(highlight=True)]).html
-    first_row = html.split("<tr")[2]  # [0] is before the table, [1] is the header
-    second_row = html.split("<tr")[3]
+    rows = html.split("Bills and receipts (")[1].split("<tr")
+    first_row, second_row = rows[2], rows[3]  # [0] is before, [1] is the header
     assert "<b>" in first_row and "<b>" not in second_row
 
 
@@ -274,7 +275,7 @@ def test_the_amount_column_is_right_aligned_and_the_others_are_not():
 def test_a_long_summary_is_cut_to_one_line_ending_in_an_ellipsis():
     long = "word " * 80
     html = render([important([entry(summary=long)])]).html
-    shown = html.split("<p>")[1].split("</p>")[0]
+    shown = re.search(r'<p style="margin:4px 0 0">(.*?)</p>', html).group(1)
     assert len(shown) <= 161 and shown.endswith("…")
     assert "\n" not in shown
 
@@ -358,3 +359,47 @@ def test_shrinking_never_hides_the_count_of_what_was_left_out():
 def test_a_normal_sized_digest_is_not_shortened():
     rendered = render([important([entry(), entry("m2")])])
     assert "Shortened" not in rendered.html and "Shortened" not in rendered.text
+
+
+# ---- Round 2: headline, tiles and preheader ----
+
+
+def due_table(highlight=True):
+    return table_section(highlight=highlight)
+
+
+def test_the_headline_says_what_needs_you_and_what_can_wait():
+    sections = [important([entry(), entry("m2")]), due_table()]
+    rendered = render(sections, total=20)
+    for page in (rendered.html, rendered.text):
+        assert "2 important" in page and "1 due soon" in page and "17 can wait" in page
+
+
+def test_a_quiet_day_says_nothing_is_urgent():
+    rendered = render([group_section()], total=12)
+    assert "Nothing urgent" in rendered.html and "Nothing urgent" in rendered.text
+    assert "12 can wait" in rendered.html
+
+
+def test_an_empty_digest_says_no_new_mail_in_the_headline():
+    assert "No new mail" in render([], total=0).html
+
+
+def test_the_subject_does_not_change_with_the_headline():
+    rendered = render([important([entry()]), due_table()], total=20)
+    assert rendered.subject == "Inbox digest, 8 Nov: 20 emails"
+
+
+def test_a_hidden_preheader_repeats_the_headline_before_anything_visible():
+    html = render([important([entry()])], total=5).html
+    hidden = re.search(r'<div style="display:none[^"]*">([^<]*)</div>', html)
+    assert hidden and "1 important" in hidden.group(1)
+    assert html.index(hidden.group(0)) < html.index("<h1")
+
+
+def test_three_big_number_tiles_show_emails_important_and_due_soon():
+    html = render([important([entry(), entry("m2")]), due_table()], total=20).html
+    for label in ("Emails", "Important", "Due soon"):
+        assert f">{label}</div>" in html
+    numbers = re.findall(r'font-size:28px[^"]*">(\d+)</div>', html)
+    assert numbers == ["20", "2", "1"]

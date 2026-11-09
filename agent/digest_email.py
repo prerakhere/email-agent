@@ -113,6 +113,37 @@ def render_digest(
     )
 
 
+def _important_count(content: DigestContent) -> int:
+    return sum(s.count for s in content.sections if s.title == "Important")
+
+
+def _due_soon_count(content: DigestContent) -> int:
+    return sum(
+        1
+        for s in content.sections
+        if s.table is not None
+        for row in s.table.rows
+        if row.highlight
+    )
+
+
+def _headline(content: DigestContent) -> str:
+    """One human line: what needs the reader, then how much can wait. No model call."""
+    if content.total == 0:
+        return "No new mail"
+    important, due = _important_count(content), _due_soon_count(content)
+    parts = []
+    if important:
+        parts.append(f"{important} important")
+    if due:
+        parts.append(f"{due} due soon")
+    if not parts:
+        parts.append("Nothing urgent")
+    waiting = max(content.total - important - due, 0)
+    parts.append(f"{waiting} can wait")
+    return " · ".join(parts)
+
+
 # ---- plain text ----
 
 
@@ -171,7 +202,11 @@ def _text_section(section: SectionSummary) -> list[str]:
 
 
 def _render_text(content: DigestContent, window: str, shortened: bool = False) -> str:
-    lines = ["Inbox digest", f"{window} ({_plural(content.total, 'email')})"]
+    lines = [
+        "Inbox digest",
+        f"{window} ({_plural(content.total, 'email')})",
+        _headline(content),
+    ]
     if content.total == 0:
         lines += ["", "No new mail in this window."]
     for section in content.sections:
@@ -188,35 +223,70 @@ def _render_text(content: DigestContent, window: str, shortened: bool = False) -
 
 # ---- HTML ----
 
+FONT = "-apple-system,Segoe UI,Arial,sans-serif"
+# One colour per section, in order. Mid-tones on purpose: readable on light and dark backgrounds,
+# and the email never sets a background of its own, so the mail client picks light or dark.
+SECTION_COLOURS = [
+    "#2563eb",
+    "#d97706",
+    "#059669",
+    "#7c3aed",
+    "#db2777",
+    "#0891b2",
+    "#65a30d",
+    "#dc2626",
+]
+MUTED = "color:#888888"
+TILE_BORDER = "#9ca3af"
+
 
 def _anchor(email_id: str, label: str) -> str:
     return f'<a href="{escape(_link(email_id), quote=True)}">{escape(label)}</a>'
 
 
-def _html_entry(item: EmailSummary) -> str:
+def _initial(sender: str) -> str:
+    for char in _sender_name(sender):
+        if char.isalpha():
+            return char.upper()
+    return "?"
+
+
+def _avatar(sender: str, colour: str) -> str:
+    return (
+        f'<div style="width:32px;height:32px;line-height:32px;border-radius:16px;'
+        f'background:{colour};color:#ffffff;text-align:center;font-weight:bold">'
+        f"{escape(_initial(sender))}</div>"
+    )
+
+
+def _html_entry(item: EmailSummary, colour: str) -> str:
     if item.fallback:
-        body = f"<p><i>{NO_SUMMARY}</i></p>"
+        body = f'<p style="margin:4px 0 0"><i>{NO_SUMMARY}</i></p>'
     elif _is_useless(item):
         body = ""
     else:
-        body = f"<p>{escape(_one_line(item.summary))}</p>"
+        body = f'<p style="margin:4px 0 0">{escape(_one_line(item.summary))}</p>'
     points = ""
     if item.action_points:
         points = (
-            "<ul>"
+            '<ul style="margin:4px 0 0;padding-left:18px">'
             + "".join(f"<li>{escape(p)}</li>" for p in item.action_points)
             + "</ul>"
         )
     return (
-        f"<div>{_anchor(item.email_id, item.subject)} "
-        f'<span style="color:#666">{escape(_sender_name(item.sender))}</span>{body}{points}</div>'
+        '<table role="presentation" width="100%" style="border-collapse:collapse"><tr>'
+        f'<td width="44" valign="top" style="padding:12px 12px 12px 0">{_avatar(item.sender, colour)}</td>'
+        f'<td valign="top" style="padding:12px 0 12px 0">'
+        f"<b>{_anchor(item.email_id, item.subject)}</b> "
+        f'<span style="{MUTED}">{escape(_sender_name(item.sender))}</span>{body}{points}</td>'
+        "</tr></table>"
     )
 
 
 def _html_ref(ref: EmailRef) -> str:
     return (
-        f"<li>{_anchor(ref.email_id, ref.subject)} "
-        f'<span style="color:#666">{escape(_sender_name(ref.sender))}</span></li>'
+        f'<li style="padding:6px 0">{_anchor(ref.email_id, ref.subject)} '
+        f'<span style="{MUTED}">{escape(_sender_name(ref.sender))}</span></li>'
     )
 
 
@@ -228,8 +298,9 @@ def _html_table(table: TableData) -> str:
     header = (
         "<tr>"
         + "".join(
-            f'<th style="text-align:{_align(c)};padding:2px 12px 2px 0">{escape(c)}</th>'
-            for c in table.columns
+            f'<th style="text-align:{_align(c)};padding:6px 8px 6px {0 if i == 0 else 8}px;'
+            f'{MUTED};font-size:12px">{escape(c)}</th>'
+            for i, c in enumerate(table.columns)
         )
         + "</tr>"
     )
@@ -247,29 +318,35 @@ def _html_table(table: TableData) -> str:
             if row.highlight:
                 inner = f"<b>{inner}</b>"
             cells.append(
-                f'<td style="text-align:{_align(column)};padding:2px 12px 2px 0">{inner}</td>'
+                f'<td style="text-align:{_align(column)};'
+                f'padding:12px 8px 12px {0 if index == 0 else 8}px">{inner}</td>'
             )
         rows.append(f"<tr>{''.join(cells)}</tr>")
     parts = [
-        f'<p style="color:#444">{escape(table.summary)}</p>',
-        '<table style="border-collapse:collapse;font-size:14px">'
+        f'<p style="margin:8px 0">{escape(table.summary)}</p>',
+        '<table width="100%" style="border-collapse:collapse;font-size:14px">'
         + header
         + "".join(rows)
         + "</table>",
     ]
     if table.omitted:
-        parts.append(f"<p>+{table.omitted} more not shown</p>")
+        parts.append(f'<p style="{MUTED}">+{table.omitted} more not shown</p>')
     if table.unlisted:
         parts.append(
-            "<p>No amount found:</p><ul>"
+            f'<p style="{MUTED}">No amount found:</p>'
+            '<ul style="margin:0;padding-left:18px">'
             + "".join(_html_ref(r) for r in table.unlisted)
             + "</ul>"
         )
     return "".join(parts)
 
 
-def _html_section(section: SectionSummary) -> str:
-    parts = [f"<h2>{escape(section.title)} ({section.count})</h2>"]
+def _html_section(section: SectionSummary, colour: str) -> str:
+    heading = (
+        f'<h2 style="font-size:18px;margin:28px 0 8px;padding-bottom:6px;'
+        f'border-bottom:2px solid {colour}">{escape(section.title)} ({section.count})</h2>'
+    )
+    parts = [heading]
     if section.mode == "table" and section.table is not None:
         parts.append(_html_table(section.table))
     elif section.mode == "group":
@@ -277,33 +354,78 @@ def _html_section(section: SectionSummary) -> str:
         text = (
             NO_SUMMARY if group is None or group.fallback else _one_line(group.summary)
         )
-        parts.append(f"<p>{escape(text)}</p>")
+        parts.append(f'<p style="margin:8px 0">{escape(text)}</p>')
         if section.refs:
-            parts.append("<ul>" + "".join(_html_ref(r) for r in section.refs) + "</ul>")
+            parts.append(
+                '<ul style="margin:0;padding-left:18px">'
+                + "".join(_html_ref(r) for r in section.refs)
+                + "</ul>"
+            )
         if section.count > len(section.refs):
-            parts.append(f"<p>+{section.count - len(section.refs)} more not shown</p>")
+            parts.append(
+                f'<p style="{MUTED}">+{section.count - len(section.refs)} more not shown</p>'
+            )
     else:
-        parts += [_html_entry(item) for item in section.items]
+        parts += [_html_entry(item, colour) for item in section.items]
         if section.omitted:
-            parts.append(f"<p>+{section.omitted} more not shown</p>")
+            parts.append(f'<p style="{MUTED}">+{section.omitted} more not shown</p>')
     return "".join(parts)
 
 
+def _tile(number: int, label: str) -> str:
+    return (
+        f'<td width="33%" style="text-align:center;padding:12px 4px;'
+        f'border:1px solid {TILE_BORDER};border-radius:8px">'
+        f'<div style="font-size:28px;font-weight:bold">{number}</div>'
+        f'<div style="font-size:12px;{MUTED}">{label}</div></td>'
+    )
+
+
+def _tiles(content: DigestContent) -> str:
+    return (
+        '<table role="presentation" width="100%" '
+        'style="border-collapse:separate;border-spacing:6px 0;margin:12px 0"><tr>'
+        + _tile(content.total, "Emails")
+        + _tile(_important_count(content), "Important")
+        + _tile(_due_soon_count(content), "Due soon")
+        + "</tr></table>"
+    )
+
+
 def _render_html(content: DigestContent, window: str, shortened: bool = False) -> str:
+    line = _headline(content)
     body = [
-        "<h1>Inbox digest</h1>",
-        f'<p style="color:#666">{escape(window)} ({_plural(content.total, "email")})</p>',
+        # Shown by mail apps as the grey preview next to the subject; hidden in the email itself.
+        (
+            '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;'
+            f'font-size:1px;line-height:1px">{escape(line)}{"&nbsp;&zwnj;" * 40}</div>'
+        ),
+        '<h1 style="font-size:24px;margin:0 0 4px">Inbox digest</h1>',
+        f'<p style="margin:0;font-size:13px;{MUTED}">{escape(window)}</p>',
+        f'<p style="font-size:18px;font-weight:bold;margin:12px 0 0">{escape(line)}</p>',
+        _tiles(content),
     ]
     if content.total == 0:
         body.append("<p>No new mail in this window.</p>")
-    body += [_html_section(section) for section in content.sections]
+    body += [
+        _html_section(section, SECTION_COLOURS[index % len(SECTION_COLOURS)])
+        for index, section in enumerate(content.sections)
+    ]
     if content.other_count:
         body.append(
-            f"<p>Plus {_plural(content.other_count, 'other email')} not summarised.</p>"
+            f'<p style="{MUTED}">Plus {_plural(content.other_count, "other email")} '
+            "not summarised.</p>"
         )
     if shortened:
-        body.append(f'<p style="color:#666"><i>{escape(SHORTENED_NOTE)}</i></p>')
+        body.append(f'<p style="{MUTED}"><i>{escape(SHORTENED_NOTE)}</i></p>')
     return (
-        '<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;'
-        'max-width:640px;line-height:1.45">' + "".join(body) + "</div>"
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="color-scheme" content="light dark">'
+        '<meta name="supported-color-schemes" content="light dark">'
+        "<title>Inbox digest</title></head>"
+        '<body style="margin:0;padding:16px">'
+        f'<div style="font-family:{FONT};max-width:600px;margin:0 auto;line-height:1.45">'
+        + "".join(body)
+        + "</div></body></html>"
     )
