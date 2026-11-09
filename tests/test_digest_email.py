@@ -168,6 +168,7 @@ def table_section(
         count=len(rows) + len(unlisted),
         table=TableData(
             columns=["Type", "Biller", "Amount", "Due"],
+            link_column=1,
             rows=rows,
             omitted=omitted,
             summary=summary,
@@ -182,7 +183,7 @@ def test_a_table_section_renders_a_real_table_with_a_header_and_a_link_per_row()
     assert "<table" in html and html.count("<tr") == 3  # header plus two rows
     for heading in ("Type", "Biller", "Amount", "Due"):
         assert "<th" in html and heading in html
-    assert "<td>HDFC Bank</td>" in html and "<td>INR 85,004.00</td>" in html
+    assert ">HDFC Bank</a>" in html and "INR 85,004.00</td>" in html
     assert 'href="https://mail.google.com/mail/u/0/#all/b1"' in html
     assert 'href="https://mail.google.com/mail/u/0/#all/b2"' in html
 
@@ -237,3 +238,52 @@ def test_the_text_version_shows_the_same_table_without_html():
     assert "2 bills: INR 7,000.00" in text
     assert "https://mail.google.com/mail/u/0/#all/b1" in text
     assert not re.search(r"</?(table|tr|td|th|b)\b", text)
+
+
+# ---- Round 1b: names not addresses, the name is the link, right-aligned amounts, one line ----
+
+
+def test_senders_show_their_name_not_their_address():
+    html = render([important([entry()]), group_section()]).html
+    assert "Jane" in html and "jane@corp.com" not in html and "n@x.com" not in html
+    text = render([important([entry()]), group_section()]).text
+    assert "Jane" in text and "jane@corp.com" not in text and "n@x.com" not in text
+
+
+def test_a_sender_with_no_name_falls_back_to_the_address():
+    nameless = entry()
+    nameless.sender = "billing@shop.example"
+    assert "billing@shop.example" in render([important([nameless])]).html
+
+
+def test_the_biller_name_is_the_link_and_there_is_no_open_column():
+    html = render([table_section()]).html
+    assert ">open</a>" not in html
+    assert 'href="https://mail.google.com/mail/u/0/#all/b1">HDFC Bank</a>' in html
+    assert html.count("<th") == 4
+
+
+def test_the_amount_column_is_right_aligned_and_the_others_are_not():
+    html = render([table_section()]).html
+    amount_header = re.search(r"<th[^>]*>Amount</th>", html).group(0)
+    amount_cell = re.search(r"<td[^>]*>INR 5,633.00</td>", html).group(0)
+    assert "text-align:right" in amount_header and "text-align:right" in amount_cell
+    assert "text-align:right" not in re.search(r"<th[^>]*>Biller</th>", html).group(0)
+
+
+def test_a_long_summary_is_cut_to_one_line_ending_in_an_ellipsis():
+    long = "word " * 80
+    html = render([important([entry(summary=long)])]).html
+    shown = html.split("<p>")[1].split("</p>")[0]
+    assert len(shown) <= 161 and shown.endswith("…")
+    assert "\n" not in shown
+
+
+def test_a_short_summary_is_left_exactly_as_it_is():
+    assert "They want Tuesday." in render([important([entry()])]).html
+    assert "…" not in render([important([entry()])]).html
+
+
+def test_a_group_summary_is_also_cut_to_one_line():
+    html = render([group_section(summary="word " * 80)]).html
+    assert "…" in html

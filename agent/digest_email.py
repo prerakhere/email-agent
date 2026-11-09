@@ -9,6 +9,7 @@ Times are shown in Indian time (the digest is for one person in India).
 
 from dataclasses import dataclass
 from datetime import datetime
+from email.utils import parseaddr
 from html import escape
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -20,6 +21,7 @@ from agent.sheets_client import email_link
 
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 NO_SUMMARY = "Summary unavailable"
+MAX_LINE_CHARS = 160  # every summary is one line
 
 
 @dataclass
@@ -36,6 +38,21 @@ def _when(moment: datetime) -> str:
 
 def _link(email_id: str) -> str:
     return email_link(quote(email_id, safe=""))
+
+
+def _sender_name(sender: str) -> str:
+    """'Jane <jane@corp.com>' -> 'Jane'; a bare address stays as it is."""
+    name, address = parseaddr(sender)
+    return name or address or sender
+
+
+def _one_line(text: str) -> str:
+    """Collapse whitespace and cut to one line at a word boundary, ending in an ellipsis."""
+    flat = " ".join(text.split())
+    if len(flat) <= MAX_LINE_CHARS:
+        return flat
+    cut = flat[: MAX_LINE_CHARS - 1].rsplit(" ", 1)[0].rstrip(" ,;:-")
+    return cut + "…"
 
 
 def _plural(n: int, word: str) -> str:
@@ -59,8 +76,11 @@ def render_digest(
 
 
 def _text_entry(item: EmailSummary) -> list[str]:
-    lines = [f"* {item.subject} - {item.sender}", f"  {_link(item.email_id)}"]
-    lines.append(f"  {NO_SUMMARY}" if item.fallback else f"  {item.summary}")
+    lines = [
+        f"* {item.subject} - {_sender_name(item.sender)}",
+        f"  {_link(item.email_id)}",
+    ]
+    lines.append(f"  {NO_SUMMARY}" if item.fallback else f"  {_one_line(item.summary)}")
     lines += [f"  - Action: {point}" for point in item.action_points]
     return lines
 
@@ -75,7 +95,10 @@ def _text_table(table: TableData) -> list[str]:
     if table.unlisted:
         lines.append("No amount found:")
         for ref in table.unlisted:
-            lines += [f"* {ref.subject} - {ref.sender}", f"  {_link(ref.email_id)}"]
+            lines += [
+                f"* {ref.subject} - {_sender_name(ref.sender)}",
+                f"  {_link(ref.email_id)}",
+            ]
     return lines
 
 
@@ -85,9 +108,14 @@ def _text_section(section: SectionSummary) -> list[str]:
         lines += _text_table(section.table)
     elif section.mode == "group":
         group = section.group
-        lines.append(NO_SUMMARY if group is None or group.fallback else group.summary)
+        lines.append(
+            NO_SUMMARY if group is None or group.fallback else _one_line(group.summary)
+        )
         for ref in section.refs:
-            lines += [f"* {ref.subject} - {ref.sender}", f"  {_link(ref.email_id)}"]
+            lines += [
+                f"* {ref.subject} - {_sender_name(ref.sender)}",
+                f"  {_link(ref.email_id)}",
+            ]
     else:
         for item in section.items:
             lines += _text_entry(item)
@@ -121,7 +149,7 @@ def _html_entry(item: EmailSummary) -> str:
     body = (
         f"<p><i>{NO_SUMMARY}</i></p>"
         if item.fallback
-        else f"<p>{escape(item.summary)}</p>"
+        else f"<p>{escape(_one_line(item.summary))}</p>"
     )
     points = ""
     if item.action_points:
@@ -132,33 +160,47 @@ def _html_entry(item: EmailSummary) -> str:
         )
     return (
         f"<div>{_anchor(item.email_id, item.subject)} "
-        f'<span style="color:#666">{escape(item.sender)}</span>{body}{points}</div>'
+        f'<span style="color:#666">{escape(_sender_name(item.sender))}</span>{body}{points}</div>'
     )
 
 
 def _html_ref(ref: EmailRef) -> str:
     return (
         f"<li>{_anchor(ref.email_id, ref.subject)} "
-        f'<span style="color:#666">{escape(ref.sender)}</span></li>'
+        f'<span style="color:#666">{escape(_sender_name(ref.sender))}</span></li>'
     )
+
+
+def _align(column: str) -> str:
+    return "right" if column == "Amount" else "left"
 
 
 def _html_table(table: TableData) -> str:
     header = (
         "<tr>"
         + "".join(
-            f'<th style="text-align:left;padding:2px 12px 2px 0">{escape(c)}</th>'
+            f'<th style="text-align:{_align(c)};padding:2px 12px 2px 0">{escape(c)}</th>'
             for c in table.columns
         )
-        + "<th></th></tr>"
+        + "</tr>"
     )
     rows = []
     for row in table.rows:
-        cells = "".join(
-            f"<td><b>{escape(c)}</b></td>" if row.highlight else f"<td>{escape(c)}</td>"
-            for c in row.cells
-        )
-        rows.append(f"<tr>{cells}<td>{_anchor(row.email_id, 'open')}</td></tr>")
+        cells = []
+        for index, (column, cell) in enumerate(
+            zip(table.columns, row.cells, strict=False)
+        ):
+            inner = (
+                _anchor(row.email_id, cell)
+                if index == table.link_column
+                else escape(cell)
+            )
+            if row.highlight:
+                inner = f"<b>{inner}</b>"
+            cells.append(
+                f'<td style="text-align:{_align(column)};padding:2px 12px 2px 0">{inner}</td>'
+            )
+        rows.append(f"<tr>{''.join(cells)}</tr>")
     parts = [
         f'<p style="color:#444">{escape(table.summary)}</p>',
         '<table style="border-collapse:collapse;font-size:14px">'
@@ -183,7 +225,9 @@ def _html_section(section: SectionSummary) -> str:
         parts.append(_html_table(section.table))
     elif section.mode == "group":
         group = section.group
-        text = NO_SUMMARY if group is None or group.fallback else group.summary
+        text = (
+            NO_SUMMARY if group is None or group.fallback else _one_line(group.summary)
+        )
         parts.append(f"<p>{escape(text)}</p>")
         if section.refs:
             parts.append("<ul>" + "".join(_html_ref(r) for r in section.refs) + "</ul>")

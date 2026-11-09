@@ -35,6 +35,7 @@ class TableRow(BaseModel):
 
 class TableData(BaseModel):
     columns: list[str]
+    link_column: int = 0  # which column's text links to the Gmail message
     rows: list[TableRow]  # the rows shown (at most max_items)
     omitted: int = 0  # rows not shown
     summary: str  # one line; covers all rows, shown or not
@@ -145,6 +146,7 @@ def bills_table(
             parts.append(f"{_plural(len(group), word)}: {_total(group)}")
     return TableData(
         columns=["Type", "Biller", "Amount", "Due"],
+        link_column=1,
         rows=rows[:max_items],
         omitted=max(len(rows) - max_items, 0),
         summary=" · ".join(parts) or "No amounts found",
@@ -190,6 +192,7 @@ def transactions_table(
         summary = " · ".join(parts)
     return TableData(
         columns=["Amount", "Via", "To"],
+        link_column=2,
         rows=rows[:max_items],
         omitted=max(len(rows) - max_items, 0),
         summary=summary,
