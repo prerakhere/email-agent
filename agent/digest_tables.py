@@ -6,6 +6,7 @@ cut by max_items), and a list of the section's mails that had no extractable amo
 mail that looked like a bill can never sit among the real bills.
 """
 
+import re
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -43,7 +44,37 @@ class TableData(BaseModel):
 
 
 def money(amount: Decimal, currency: str, sign: str = "") -> str:
+    if currency == "INR":
+        return f"{sign}₹{amount:,.2f}"
     return f"{sign}{currency} {amount:,.2f}"
+
+
+def due_label(due: date, today: date | None) -> str:
+    """'today', 'tomorrow', 'in 4 days', a short date when far off, 'overdue' when past."""
+    if today is None:
+        return due.isoformat()
+    days = (due - today).days
+    if days < 0:
+        return "overdue"
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    if days <= 14:
+        return f"in {days} days"
+    return f"{due.day} {due:%b}"
+
+
+def clean_payee(payee: str | None, via: str) -> str:
+    """Masked UPI handles ('*****name@bank') become 'name'; unreadable ones 'UPI payment'."""
+    if not payee:
+        return "-"
+    if "*" not in payee and "@" not in payee:
+        return payee
+    name = payee.lstrip("*").strip().split("@")[0]
+    if len(re.findall(r"[A-Za-z]", name)) >= 3:
+        return name
+    return "UPI payment" if via == "UPI" else "-"
 
 
 def _plural(n: int, word: str) -> str:
@@ -79,35 +110,37 @@ def bills_table(
     today = now.date() if now else None
     soon = today + timedelta(days=DUE_SOON_DAYS) if today else None
 
-    rows = []
+    # The same biller, amount and due date seen several times (reminders) is ONE bill: show one row
+    # marked with how many, and count it once in the total.
+    groups: dict[tuple, list[tuple[Email, Bill]]] = {}
     for email, bill in found:
         kind = (
             "bill"
             if classifications[email.id].category == Category.BILLS
             else "receipt"
         )
-        due = bill.due_date
+        key = (kind, bill.vendor, bill.amount, bill.currency, bill.due_date)
+        groups.setdefault(key, []).append((email, bill))
+
+    rows = []
+    for (kind, vendor, amount, currency, due), members in groups.items():
+        times = f" ×{len(members)}" if len(members) > 1 else ""
         rows.append(
             TableRow(
-                email_id=email.id,
+                email_id=members[0][0].id,
                 cells=[
                     kind,
-                    bill.vendor,
-                    money(bill.amount, bill.currency),
-                    due.isoformat() if due else "-",
+                    f"{vendor}{times}",
+                    money(amount, currency),
+                    due_label(due, today) if due else "-",
                 ],
                 highlight=bool(soon and due and due <= soon),
             )
         )
 
     parts = []
-    for word, category_is_bill in (("bill", True), ("receipt", False)):
-        group = [
-            (bill.amount, bill.currency)
-            for email, bill in found
-            if (classifications[email.id].category == Category.BILLS)
-            == category_is_bill
-        ]
+    for word in ("bill", "receipt"):
+        group = [(k[2], k[3]) for k in groups if k[0] == word]
         if group:
             parts.append(f"{_plural(len(group), word)}: {_total(group)}")
     return TableData(
@@ -129,7 +162,7 @@ def transactions_table(
             cells=[
                 money(tx.amount, tx.currency, "+" if tx.direction == "credit" else ""),
                 tx.via,
-                tx.payee or "-",
+                clean_payee(tx.payee, tx.via),
             ],
         )
         for tx in found

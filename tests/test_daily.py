@@ -364,7 +364,7 @@ def test_a_transaction_alert_becomes_a_table_row_and_is_never_sent_for_summary()
     titles = {s.title: s for s in plan.content.sections}
     spend = titles["Transactions"]
     assert spend.mode == "table" and [r.cells for r in spend.table.rows] == [
-        ["INR 50.00", "UPI", "Cafe"]
+        ["₹50.00", "UPI", "Cafe"]
     ]
     assert "UPI txn alert" not in models.summarized  # a table needs no per-mail summary
     bills = titles["Bills and receipts"]
@@ -390,5 +390,5 @@ def test_the_transaction_table_is_in_the_email_that_gets_sent():
     )
     assert result.errors == []
     _subject, text, html = gmail.sent[0]
-    assert "<table" in html and "1 transaction" in html and "INR 50.00" in html
+    assert "<table" in html and "1 transaction" in html and "₹50.00" in html
     assert "1 transaction" in text and "UPI | Cafe" in text
