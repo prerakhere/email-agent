@@ -332,3 +332,35 @@ def test_lender_marketing_is_a_promotion_even_when_it_reads_like_account_news():
     text = SYSTEM_PROMPT.lower()
     assert "emi" in text and "limit" in text
     assert "bill needs" in text  # a bill needs a specific amount due or a payment made
+
+
+# ---- the digest is a next-day review: automated and real-time mail is stale, not important ----
+
+
+def test_automated_account_security_and_verification_mail_is_a_notification_not_important():
+    text = SYSTEM_PROMPT.lower()
+    assert "automated account" in text and "security" in text and "sign-in" in text
+    assert "verification" in text and "one-time" in text and "welcome" in text
+    assert "even from banks, google or microsoft" in text
+    assert "never important" in text  # automated notices are never important
+
+
+def test_shipping_and_delivery_updates_are_notifications():
+    text = SYSTEM_PROMPT.lower()
+    assert "out for delivery" in text and "delivered" in text
+    assert "stale by the next day" in text
+
+
+def test_booking_and_ticket_confirmations_are_receipts():
+    text = SYSTEM_PROMPT.lower()
+    assert "booking" in text and "ticket" in text and "bus, train, flight" in text
+
+
+def test_festival_greetings_and_fundraising_appeals_are_promotions_not_newsletters():
+    text = SYSTEM_PROMPT.lower()
+    assert "greetings" in text and "fundraising" in text
+
+
+def test_only_mail_written_by_a_real_person_gets_the_benefit_of_the_doubt_for_important():
+    text = SYSTEM_PROMPT.lower()
+    assert "written by a real person matters, choose important" in text
