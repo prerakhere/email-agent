@@ -10,6 +10,8 @@ WORKLOG.md
 rules.json
 # personal digest layout (copy of the defaults, edited to taste); see agent/digest_config.py
 digest.toml
+# personal taste (folders, time zone, preferences); copy profile.example.toml; see agent/profile.py
+profile.toml
 # rendered digest preview: contains summaries of real mail
 digest_preview.html
 # generated at deploy time from uv.lock by scripts/deploy.sh

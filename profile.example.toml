@@ -1,0 +1,30 @@
+# Your taste, kept out of the code. Copy this file to `profile.toml` (gitignored) and edit it.
+# Everything is optional: with no profile.toml the agent uses neutral defaults.
+
+# Times in the digest, and "same day" matching of payments, use this zone (an IANA name).
+timezone = "Europe/London"
+
+# What you care about, one short line each (at most 20 lines, 300 characters each).
+# These are added to the instructions the classifier follows.
+preferences = [
+  "Delivery and shipping updates are noise to me.",
+  "Festival greetings and donation appeals are promotions.",
+]
+
+# Currency code -> symbol. Add the ones you use; others are shown by their code.
+[currency_symbols]
+CHF = "Fr"
+
+# Your own Gmail folders the agent may learn sender rules from: folder -> category.
+# Categories: bills, receipts, transactions, statements, newsletters, promotions,
+# important, notifications, job_alerts, needs_review.
+[learn_from_folders]
+"Reading list" = "newsletters"
+"Money/Receipts" = "receipts"
+
+# Your existing labels to file each category into, in order of preference.
+# Anything not listed here is filed under an Agent/... label.
+[file_into]
+bills = ["Money/Bills"]
+receipts = ["Money/Receipts"]
+newsletters = ["Reading list"]
