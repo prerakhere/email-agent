@@ -70,6 +70,13 @@ def _is_useless(item: EmailSummary) -> bool:
     return not item.fallback and bool(_USELESS_SUMMARY.search(item.summary))
 
 
+def _other_line(content: DigestContent) -> str:
+    which = (
+        f" ({', '.join(content.other_categories)})" if content.other_categories else ""
+    )
+    return f"Plus {_plural(content.other_count, 'other email')}{which} not summarised."
+
+
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
@@ -92,6 +99,10 @@ def _shrink(content: DigestContent, level: int) -> DigestContent:
                 section.table.rows = section.table.rows[:max_rows]
                 section.table.omitted += cut
             section.table.unlisted = section.table.unlisted[:max_unlisted]
+            cut = len(section.table.statements) - max_unlisted
+            if cut > 0:
+                section.table.statements = section.table.statements[:max_unlisted]
+                section.table.statements_omitted += cut
     return shrunk
 
 
@@ -176,6 +187,8 @@ def _text_table(table: TableData) -> list[str]:
                 f"* {ref.subject} - {_sender_name(ref.sender)}",
                 f"  {_link(ref.email_id)}",
             ]
+        if table.statements_omitted:
+            lines.append(f"+{_plural(table.statements_omitted, 'more statement')}")
     if table.unlisted:
         lines.append("No amount found:")
         for ref in table.unlisted:
@@ -223,7 +236,7 @@ def _render_text(content: DigestContent, window: str, shortened: bool = False) -
     if content.other_count:
         lines += [
             "",
-            f"Plus {_plural(content.other_count, 'other email')} not summarised.",
+            _other_line(content),
         ]
     if shortened:
         lines += ["", SHORTENED_NOTE]
@@ -347,6 +360,10 @@ def _html_table(table: TableData) -> str:
             + "".join(_html_ref(r) for r in table.statements)
             + "</ul>"
         )
+        if table.statements_omitted:
+            parts.append(
+                f'<p style="{MUTED}">+{_plural(table.statements_omitted, "more statement")}</p>'
+            )
     if table.unlisted:
         parts.append(
             f'<p style="{MUTED}">No amount found:</p>'
@@ -428,10 +445,7 @@ def _render_html(content: DigestContent, window: str, shortened: bool = False) -
         for index, section in enumerate(content.sections)
     ]
     if content.other_count:
-        body.append(
-            f'<p style="{MUTED}">Plus {_plural(content.other_count, "other email")} '
-            "not summarised.</p>"
-        )
+        body.append(f'<p style="{MUTED}">{escape(_other_line(content))}</p>')
     if shortened:
         body.append(f'<p style="{MUTED}"><i>{escape(SHORTENED_NOTE)}</i></p>')
     return (

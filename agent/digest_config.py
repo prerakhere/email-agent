@@ -19,6 +19,7 @@ With no `digest.toml`, DEFAULT_CONFIG is used. Adding a brand-new CATEGORY of ma
 code change (agent/schemas.py); everything else is just this file.
 """
 
+import logging
 import tomllib
 from pathlib import Path
 from typing import Literal
@@ -27,6 +28,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from agent.gmail_client import BODY_PREVIEW_CHARS
 from agent.schemas import Category
+
+log = logging.getLogger("gmail_agent.digest_config")
 
 
 class DigestSection(BaseModel):
@@ -47,7 +50,7 @@ class DigestSection(BaseModel):
     def _table_and_mode_agree(self) -> "DigestSection":
         if self.mode == "table" and self.table is None:
             raise ValueError(
-                'a "table" section must say which table: "bills" or "transactions"'
+                'a "table" section must say which table: "money", "bills" or "transactions"'
             )
         if self.mode != "table" and self.table is not None:
             raise ValueError('"table" can only be set when mode is "table"')
@@ -142,4 +145,14 @@ def load_digest_config(path: Path) -> DigestConfig:
         data = tomllib.loads(path.read_text())
     except tomllib.TOMLDecodeError as error:
         raise ValueError(f"{path.name} is not valid TOML: {error}") from error
-    return DigestConfig(**data)
+    config = DigestConfig(**data)
+    uncovered = [c.value for c in Category if config.section_for(c) is None]
+    if uncovered:
+        # Allowed (such mail only appears as a count), but say so: a category added after the
+        # file was written would otherwise vanish from the digest in silence.
+        log.warning(
+            "%s has no section for: %s (that mail is only counted)",
+            path.name,
+            ", ".join(uncovered),
+        )
+    return config

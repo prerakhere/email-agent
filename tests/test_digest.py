@@ -170,3 +170,17 @@ def test_no_mail_means_an_empty_digest_and_no_model_calls():
     result, chains = digest([])
     assert result.sections == [] and result.total == 0 and result.other_count == 0
     assert chains.per_email_subjects == [] and chains.group_requests == []
+
+
+def test_mail_with_no_section_is_counted_and_its_categories_named():
+    only_important = DigestConfig(
+        sections=[DigestSection(title="Important", categories=["important"], style="s")]
+    )
+    pairs = [
+        (make_email("1", "stmt"), Category.STATEMENTS),
+        (make_email("2", "news"), Category.NEWSLETTERS),
+        (make_email("3", "stmt2"), Category.STATEMENTS),
+    ]
+    result, _ = digest(pairs, only_important)
+    assert result.other_count == 3
+    assert result.other_categories == ["newsletters", "statements"]

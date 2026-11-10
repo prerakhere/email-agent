@@ -409,8 +409,6 @@ def test_a_statement_that_shows_an_amount_due_is_still_a_bill():
 # ---- the owner's preferences: a block built from the profile, absent without one ----
 
 
-
-
 def system_text(profile=None) -> str:
     return classifier_prompt(profile).format_messages(emails="x")[0].content
 

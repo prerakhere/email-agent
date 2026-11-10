@@ -469,3 +469,39 @@ def test_without_a_profile_times_are_shown_in_utc():
     content = DigestContent(sections=[important([entry()])], other_count=0, total=1)
     rendered = render_digest(content, SINCE, LATE_UNTIL)
     assert "8:00 PM" in rendered.text and "8 Nov" in rendered.subject
+
+
+def test_the_other_mail_line_names_the_categories_no_section_covers():
+    content = DigestContent(
+        sections=[important([entry()])],
+        other_count=3,
+        total=4,
+        other_categories=["newsletters", "statements"],
+    )
+    rendered = render_digest(content, SINCE, UNTIL)
+    for page in (rendered.html, rendered.text):
+        assert "Plus 3 other emails (newsletters, statements) not summarised" in page
+
+
+def test_hidden_statements_are_counted_in_a_more_line():
+    ref = EmailRef(email_id="s1", sender="Bank <b@x.com>", subject="Statement")
+    section = statements_section([ref])
+    section.table.statements_omitted = 4
+    rendered = render([section])
+    assert (
+        "+4 more statements" in rendered.html and "+4 more statements" in rendered.text
+    )
+
+
+def test_a_huge_statements_list_is_shrunk_below_the_gmail_limit():
+    refs = [
+        EmailRef(
+            email_id=f"s{i}",
+            sender="Bank <b@x.com>",
+            subject=f"Statement {i} " + "x" * 60,
+        )
+        for i in range(600)
+    ]
+    rendered = render([statements_section(refs)])
+    assert len(rendered.html.encode()) < 100_000
+    assert "more statements" in rendered.html

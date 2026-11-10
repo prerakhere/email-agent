@@ -52,6 +52,9 @@ class DigestContent(BaseModel):
     sections: list[SectionSummary]  # config order; empty sections are left out
     other_count: int  # mail in a category no section covers
     total: int  # every email considered
+    other_categories: list[str] = Field(
+        default_factory=list
+    )  # which categories those were
 
 
 def _newest_first(emails: list[Email]) -> list[Email]:
@@ -132,10 +135,13 @@ def build_digest(
     locale = Locale.from_profile(profile)
     by_section: dict[str, list[Email]] = {s.title: [] for s in config.sections}
     other = 0
+    other_categories: set[str] = set()
     for email in emails:
-        section = config.section_for(classifications[email.id].category)
+        category = classifications[email.id].category
+        section = config.section_for(category)
         if section is None:
             other += 1
+            other_categories.add(category.value)
         else:
             by_section[section.title].append(email)
     sections = [
@@ -153,4 +159,9 @@ def build_digest(
         for s in config.sections
         if by_section[s.title]
     ]
-    return DigestContent(sections=sections, other_count=other, total=len(emails))
+    return DigestContent(
+        sections=sections,
+        other_count=other,
+        total=len(emails),
+        other_categories=sorted(other_categories),
+    )

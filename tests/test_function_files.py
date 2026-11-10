@@ -64,3 +64,9 @@ def test_the_example_settings_list_every_setting_the_job_reads_and_holds_no_secr
 
 def test_the_real_local_settings_file_is_gitignored():
     assert "local.settings.json" in (ROOT / ".gitignore").read_text().splitlines()
+
+
+def test_the_optional_personal_files_are_uploaded_with_the_app():
+    # rules.json, digest.toml and profile.toml are read at run time from the app folder.
+    for name in ("rules.json", "digest.toml", "profile.toml"):
+        assert name not in FUNCIGNORE, name

@@ -49,6 +49,7 @@ class TableData(BaseModel):
     statements: list[EmailRef] = Field(
         default_factory=list
     )  # periodic records, no amount
+    statements_omitted: int = 0  # statements not shown
 
 
 @dataclass(frozen=True)
@@ -272,7 +273,7 @@ def _match_payments(
     by_id = {e.id: e for e in ordered}
     pairs: list[tuple[str, object, str]] = []
     for key, members in groups.items():
-        kind, _vendor, amount, currency, _due = key
+        kind, vendor, amount, currency, _due = key
         arrivals = [e.received_at for e, _ in members]
         if any(a is None for a in arrivals):
             continue
@@ -281,8 +282,12 @@ def _match_payments(
                 continue
             tx_email = by_id[tx.email_id]
             if kind == "bill":
-                # Paid after the bill arrived (the same day or later).
-                if tx_email.received_at and tx_email.received_at >= min(arrivals):
+                # Paid after the bill arrived (the same day or later), AND the payment names the
+                # biller: the amount alone is not evidence (a ₹499 bill and an unrelated ₹499
+                # purchase would otherwise hide a bill that is still due).
+                names_biller = _brand_words(vendor) & _brand_words(tx.payee or "")
+                after = tx_email.received_at and tx_email.received_at >= min(arrivals)
+                if names_biller and after:
                     pairs.append(("bill", key, tx.email_id))
             elif _local_day(tx_email, tz) and _local_day(tx_email, tz) == _local_day(
                 members[0][0], tz
@@ -396,7 +401,8 @@ def money_table(
         rows=rows[:max_items],
         omitted=max(len(rows) - max_items, 0),
         summary=" · ".join(parts) or "No amounts found",
-        statements=_refs(statements),
+        statements=_refs(statements[:max_items]),
+        statements_omitted=max(len(statements) - max_items, 0),
         unlisted=_refs(
             [
                 e
@@ -437,24 +443,13 @@ def transactions_table(
 
     summary = "No amounts found"
     if found:
+        parts = [_plural(len(found), "transaction")] + _spending_parts(found, symbols)
         spent = [tx for tx in found if tx.direction == "debit"]
-        received = [tx for tx in found if tx.direction == "credit"]
-        parts = [_plural(len(found), "transaction")]
         if spent:
-            by_via = Counter(tx.via for tx in spent).most_common()
-            how = ", ".join(
-                f"{via} {n}" for via, n in sorted(by_via, key=lambda p: (-p[1], p[0]))
-            )
             largest = max(spent, key=lambda tx: tx.amount)
-            parts.append(
-                f"spent {_total([(tx.amount, tx.currency) for tx in spent], symbols)} ({how})"
-            )
-            parts.append(
-                f"largest {money(largest.amount, largest.currency, symbols=symbols)}"
-            )
-        if received:
-            parts.append(
-                f"received {_total([(tx.amount, tx.currency) for tx in received], symbols)}"
+            # right after the "spent" part, before any "received" part
+            parts.insert(
+                2, f"largest {money(largest.amount, largest.currency, symbols=symbols)}"
             )
         summary = " · ".join(parts)
     return TableData(

@@ -17,16 +17,19 @@ preferences = [
 [currency_symbols]
 CHF = "Fr"
 
-# Your own Gmail folders the agent may learn sender rules from: folder -> category.
+# Your own Gmail folders the agent may learn sender rules from, and may trust as YOUR filing when
+# mail already sits there: folder -> category. A folder covers everything nested under it.
 # Categories: bills, receipts, transactions, statements, newsletters, promotions,
-# important, notifications, job_alerts, needs_review.
+# important, notifications, job_alerts, needs_review. The Agent/... labels are not allowed here.
 [learn_from_folders]
 "Reading list" = "newsletters"
 "Money/Receipts" = "receipts"
 
 # Your existing labels to file each category into, in order of preference.
 # Anything not listed here is filed under an Agent/... label.
+# Trade-off: a folder that is ALSO listed above is trusted as your own filing even when the agent
+# put the mail there, so the agent's guesses in it are never re-checked. Keep the two lists apart
+# unless you review that folder yourself.
 [file_into]
 bills = ["Money/Bills"]
-receipts = ["Money/Receipts"]
-newsletters = ["Reading list"]
+promotions = ["Shopping/Offers"]

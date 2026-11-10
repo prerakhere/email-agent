@@ -236,3 +236,20 @@ def test_the_older_separate_bills_and_transactions_tables_still_validate():
     DigestSection(
         title="T", categories=["transactions"], mode="table", table="transactions"
     )
+
+
+def test_loading_a_config_that_leaves_categories_out_warns_and_names_them(
+    tmp_path, caplog
+):
+    path = tmp_path / "digest.toml"
+    path.write_text(
+        '[[sections]]\ntitle = "Only"\ncategories = ["important"]\nstyle = "s"\n'
+    )
+    with caplog.at_level("WARNING", logger="gmail_agent.digest_config"):
+        load_digest_config(path)
+    assert "no section" in caplog.text and "statements" in caplog.text
+
+
+def test_the_table_error_message_mentions_every_table_kind():
+    with pytest.raises(ValueError, match="money"):
+        DigestSection(title="B", categories=["bills"], mode="table")

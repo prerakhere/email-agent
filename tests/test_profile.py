@@ -102,3 +102,36 @@ def test_the_committed_example_profile_is_valid_and_shows_every_setting():
     profile = parse_profile(text, "profile.example.toml")
     assert profile.timezone and profile.preferences
     assert profile.learn_from_folders and profile.file_into
+
+
+def test_a_profiles_currency_symbols_are_added_to_the_defaults_not_replacing_them():
+    profile = parse_profile('[currency_symbols]\nCHF = "Fr"', "profile.toml")
+    assert profile.currency_symbols["CHF"] == "Fr"
+    assert (
+        profile.currency_symbols["INR"] == "₹"
+        and profile.currency_symbols["USD"] == "$"
+    )
+
+
+def test_a_profile_can_override_a_default_symbol():
+    profile = parse_profile('[currency_symbols]\nINR = "Rs"', "profile.toml")
+    assert profile.currency_symbols["INR"] == "Rs"
+
+
+def test_a_missing_profile_file_is_announced_in_the_log(tmp_path, caplog):
+    with caplog.at_level("WARNING", logger="gmail_agent.profile"):
+        load_profile(tmp_path / "profile.toml")
+    assert "profile.toml" in caplog.text and "neutral" in caplog.text
+
+
+def test_the_agents_own_label_tree_cannot_be_a_teacher():
+    for folder in ("Agent", "Agent/Bills", "agent/newsletters"):
+        with pytest.raises(ValueError, match="Agent"):
+            parse_profile(f'[learn_from_folders]\n"{folder}" = "bills"', "profile.toml")
+
+
+def test_a_folder_may_be_both_learned_from_and_filed_into():
+    # The owner's choice: their folder is treated as their own filing even when the agent put the
+    # mail there (so the agent's guesses there are not re-checked). Allowed, documented in the example.
+    text = '[learn_from_folders]\n"Money" = "bills"\n[file_into]\nbills = ["Money"]'
+    assert parse_profile(text, "profile.toml").file_into[Category.BILLS] == ["Money"]

@@ -289,3 +289,42 @@ def test_the_same_pair_is_merged_when_the_profile_zone_puts_them_on_one_day():
         Profile(timezone="UTC"),
     )
     assert len(cells(content)) == 1
+
+
+# ---- a bill is only "paid" when the payment also names the biller ----
+
+
+def test_an_unrelated_payment_of_the_same_amount_does_not_mark_a_bill_paid():
+    pairs = [
+        (mail("b1", at(9, 1)), Category.BILLS),
+        (mail("p1", at(9, 6)), Category.TRANSACTIONS),
+    ]
+    content = money(
+        pairs,
+        {"b1": bill("Power Co", "499.00")},
+        {"p1": pay("p1", "499.00", "Cafe Blue")},
+    )
+    assert [c[0] for c in cells(content)] == ["bill", "spent"]
+    assert cells(content)[0][3] != "paid"
+
+
+def test_a_payment_with_no_readable_payee_never_marks_a_bill_paid():
+    pairs = [
+        (mail("b1", at(9, 1)), Category.BILLS),
+        (mail("p1", at(9, 6)), Category.TRANSACTIONS),
+    ]
+    content = money(pairs, {"b1": bill()}, {"p1": pay("p1", payee=None)})
+    assert [c[0] for c in cells(content)] == ["bill", "spent"]
+
+
+def test_a_payment_naming_the_biller_still_marks_it_paid():
+    pairs = [
+        (mail("b1", at(9, 1)), Category.BILLS),
+        (mail("p1", at(9, 6)), Category.TRANSACTIONS),
+    ]
+    content = money(
+        pairs,
+        {"b1": bill("Sample Power Co", "1090.50")},
+        {"p1": pay("p1", "1090.50", "SAMPLE POWER")},
+    )
+    assert cells(content)[0][3] == "paid"

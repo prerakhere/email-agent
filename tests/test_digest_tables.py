@@ -473,3 +473,20 @@ def test_a_due_date_is_relative_to_todays_date_in_the_profiles_zone():
     utc = run_with(Profile(timezone="UTC"), pairs, BILLS_CONFIG, bills, LATE_NOW)
     assert india.sections[0].table.rows[0].cells[3] == "today"
     assert utc.sections[0].table.rows[0].cells[3] == "tomorrow"
+
+
+def test_statements_are_capped_at_max_items_and_the_rest_counted():
+    config = DigestConfig(
+        sections=[
+            DigestSection(
+                title="Money",
+                categories=["statements"],
+                mode="table",
+                table="money",
+                max_items=2,
+            )
+        ]
+    )
+    pairs = [(email(str(i), f"Statement {i}"), Category.STATEMENTS) for i in range(5)]
+    table = run(pairs, config).sections[0].table
+    assert len(table.statements) == 2 and table.statements_omitted == 3

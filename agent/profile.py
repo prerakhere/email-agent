@@ -5,13 +5,23 @@ The defaults here are neutral. To make the agent yours, copy `profile.example.to
 nothing.
 """
 
+import logging
 import tomllib
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from agent.schemas import Category
+
+log = logging.getLogger("gmail_agent.profile")
 
 MAX_PREFERENCES = 20
 MAX_PREFERENCE_CHARS = (
@@ -25,7 +35,7 @@ class Profile(BaseModel):
 
     # Times in the digest and "same day" matching use this zone (an IANA name).
     timezone: str = "UTC"
-    # Currency code -> symbol; a currency not listed is shown by its code ("CHF 20.00").
+    # Currency code -> symbol, ADDED to the defaults; a currency with no symbol shows its code.
     currency_symbols: dict[str, str] = Field(
         default_factory=lambda: dict(DEFAULT_SYMBOLS)
     )
@@ -56,7 +66,19 @@ class Profile(BaseModel):
                 )
             if not 1 <= len(symbol) <= 3:
                 raise ValueError(f"symbol for {code} must be 1 to 3 characters")
-        return value
+        return {**DEFAULT_SYMBOLS, **value}
+
+    @model_validator(mode="after")
+    def _teachers_are_the_users_own_folders(self) -> "Profile":
+        # The agent's own labels record its guesses, never the user's filing: learning from them
+        # would turn an old guess into "ground truth" that is never re-checked.
+        for folder in self.learn_from_folders:
+            lowered = folder.lower()
+            if lowered == "agent" or lowered.startswith("agent/"):
+                raise ValueError(
+                    f"learn_from_folders cannot include the Agent/ labels ({folder!r})"
+                )
+        return self
 
     @field_validator("preferences")
     @classmethod
@@ -87,5 +109,9 @@ def parse_profile(text: str, source: str) -> Profile:
 def load_profile(path: Path) -> Profile:
     """The profile in `path`, or the neutral default when the file does not exist."""
     if not path.exists():
+        log.warning(
+            "no %s found: using the neutral profile (UTC, Agent/ labels only, no preferences)",
+            path.name,
+        )
         return Profile()
     return parse_profile(path.read_text(), path.name)
