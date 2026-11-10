@@ -51,5 +51,6 @@ def create_digest(
         bills=state.get("bills"),
         transactions=state.get("transactions"),
         now=until,
+        profile=profile,
     )
-    return content, render_digest(content, since, until)
+    return content, render_digest(content, since, until, profile)

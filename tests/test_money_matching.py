@@ -13,6 +13,7 @@ from agent.digest import build_digest
 from agent.digest_config import DigestConfig, DigestSection
 from agent.digest_email import render_digest
 from agent.nodes.transactions import Transaction
+from agent.profile import Profile
 from agent.schemas import Bill, Category, Classification, Email
 
 NOW = datetime(2026, 11, 9, 3, 0, tzinfo=UTC)  # 8:30 AM IST on 9 Nov
@@ -65,7 +66,7 @@ def pay(mid, amount="8120.00", payee="Example Bank", direction="debit", via="UPI
     )
 
 
-def money(pairs, bills=None, transactions=None):
+def money(pairs, bills=None, transactions=None, profile=None):
     emails = [e for e, _ in pairs]
     classes = {
         e.id: Classification(category=c, confidence=1.0, reason="r", source="llm")
@@ -80,6 +81,7 @@ def money(pairs, bills=None, transactions=None):
         bills=bills or {},
         transactions=transactions or {},
         now=NOW,
+        profile=profile,
     )
 
 
@@ -256,3 +258,34 @@ def test_a_booking_mail_and_a_payment_on_different_days_are_not_merged():
     pairs[1] = (mail("p1", at(8, 6)), Category.TRANSACTIONS)
     content = money(pairs, transactions=found)
     assert [c[0] for c in cells(content)] == ["spent"]
+
+
+# ---- "the same day" means the same day in the profile's time zone ----
+
+
+def late_evening_pairs():
+    # 10:30 PM on 8 Nov in India and 1:30 AM on 9 Nov in India: one day apart there, the same UTC day
+    return [
+        (mail("r1", datetime(2026, 11, 8, 17, 0, tzinfo=UTC)), Category.RECEIPTS),
+        (mail("p1", datetime(2026, 11, 8, 20, 0, tzinfo=UTC)), Category.TRANSACTIONS),
+    ]
+
+
+def test_a_receipt_and_payment_that_straddle_midnight_locally_are_not_merged():
+    content = money(
+        late_evening_pairs(),
+        {"r1": bill("Amazon.in", "499.00", None)},
+        {"p1": pay("p1", "499.00")},
+        Profile(timezone="Asia/Kolkata"),
+    )
+    assert [c[0] for c in cells(content)] == ["receipt", "spent"]
+
+
+def test_the_same_pair_is_merged_when_the_profile_zone_puts_them_on_one_day():
+    content = money(
+        late_evening_pairs(),
+        {"r1": bill("Amazon.in", "499.00", None)},
+        {"p1": pay("p1", "499.00")},
+        Profile(timezone="UTC"),
+    )
+    assert len(cells(content)) == 1

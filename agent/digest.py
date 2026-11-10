@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from agent.digest_config import DigestConfig, DigestSection
 from agent.digest_tables import (
     EmailRef,
+    Locale,
     TableData,
     bills_table,
     money_table,
@@ -28,6 +29,7 @@ from agent.nodes.summarize import (
     summarize_group,
 )
 from agent.nodes.transactions import Transaction
+from agent.profile import Profile
 from agent.schemas import Bill, Classification, Email
 
 
@@ -72,17 +74,26 @@ def _summarise_section(
     bills: dict[str, Bill],
     transactions: dict[str, Transaction],
     now: datetime | None,
+    locale: Locale,
 ) -> SectionSummary:
     ordered = _newest_first(emails)
     if section.mode == "table":
         if section.table == "money":
             table = money_table(
-                ordered, classifications, bills, transactions, section.max_items, now
+                ordered,
+                classifications,
+                bills,
+                transactions,
+                section.max_items,
+                now,
+                locale,
             )
         elif section.table == "bills":
-            table = bills_table(ordered, classifications, bills, section.max_items, now)
+            table = bills_table(
+                ordered, classifications, bills, section.max_items, now, locale
+            )
         else:
-            table = transactions_table(ordered, transactions, section.max_items)
+            table = transactions_table(ordered, transactions, section.max_items, locale)
         return SectionSummary(
             title=section.title, mode="table", count=len(ordered), table=table
         )
@@ -116,7 +127,9 @@ def build_digest(
     bills: dict[str, Bill] | None = None,
     transactions: dict[str, Transaction] | None = None,
     now: datetime | None = None,
+    profile: Profile | None = None,
 ) -> DigestContent:
+    locale = Locale.from_profile(profile)
     by_section: dict[str, list[Email]] = {s.title: [] for s in config.sections}
     other = 0
     for email in emails:
@@ -135,6 +148,7 @@ def build_digest(
             bills or {},
             transactions or {},
             now,
+            locale,
         )
         for s in config.sections
         if by_section[s.title]

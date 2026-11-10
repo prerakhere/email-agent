@@ -4,7 +4,7 @@ Safety rules, because the text comes from strangers' emails and from a model:
 - every piece of dynamic text is HTML-escaped;
 - every link is built here from a message id and points at mail.google.com; a URL the model or a
   sender wrote can never become a link.
-Times are shown in Indian time (the digest is for one person in India).
+Times and dates are shown in the profile's time zone (UTC when there is no profile).
 """
 
 import re
@@ -18,9 +18,9 @@ from zoneinfo import ZoneInfo
 from agent.digest import DigestContent, SectionSummary
 from agent.digest_tables import EmailRef, TableData
 from agent.nodes.summarize import EmailSummary
+from agent.profile import Profile
 from agent.sheets_client import email_link
 
-LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 NO_SUMMARY = "Summary unavailable"
 MAX_LINE_CHARS = 160  # every summary is one line
 MAX_HTML_BYTES = 90_000  # Gmail clips a message at about 102 KB; stay well under it
@@ -42,8 +42,8 @@ class RenderedDigest:
     html: str
 
 
-def _when(moment: datetime) -> str:
-    local = moment.astimezone(LOCAL_TZ)
+def _when(moment: datetime, tz: ZoneInfo) -> str:
+    local = moment.astimezone(tz)
     return f"{local.day} {local:%b}, {local.hour % 12 or 12}:{local:%M} {local:%p}"
 
 
@@ -96,11 +96,15 @@ def _shrink(content: DigestContent, level: int) -> DigestContent:
 
 
 def render_digest(
-    content: DigestContent, since: datetime, until: datetime
+    content: DigestContent,
+    since: datetime,
+    until: datetime,
+    profile: Profile | None = None,
 ) -> RenderedDigest:
-    local_end = until.astimezone(LOCAL_TZ)
+    tz = ZoneInfo((profile or Profile()).timezone)
+    local_end = until.astimezone(tz)
     subject = f"Inbox digest, {local_end.day} {local_end:%b}: {_plural(content.total, 'email')}"
-    window = f"{_when(since)} to {_when(until)}"
+    window = f"{_when(since, tz)} to {_when(until, tz)}"
     shown, note = content, False
     html = _render_html(shown, window, note)
     for level in range(len(SHRINK_LEVELS)):

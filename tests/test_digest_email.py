@@ -5,6 +5,7 @@ from agent.digest import DigestContent, EmailRef, SectionSummary
 from agent.digest_email import render_digest
 from agent.digest_tables import TableData, TableRow
 from agent.nodes.summarize import EmailSummary, GroupSummary
+from agent.profile import Profile
 
 SINCE = datetime(2026, 11, 7, 2, 30, tzinfo=UTC)  # 8:00 AM IST on 7 Nov
 UNTIL = datetime(2026, 11, 8, 2, 30, tzinfo=UTC)  # 8:00 AM IST on 8 Nov
@@ -43,8 +44,9 @@ def test_the_subject_has_the_date_and_the_count():
     assert "2 emails" in render([important([entry(), entry("m2")])]).subject
 
 
-def test_the_window_is_shown_in_indian_time():
-    rendered = render([important([entry()])])
+def test_the_window_is_shown_in_the_profiles_time_zone():
+    content = DigestContent(sections=[important([entry()])], other_count=0, total=1)
+    rendered = render_digest(content, SINCE, UNTIL, Profile(timezone="Asia/Kolkata"))
     assert (
         "8:00 AM" in rendered.text
         and "7 Nov" in rendered.text
@@ -441,3 +443,29 @@ def test_statements_are_listed_with_a_link_under_a_statements_heading():
 def test_no_statements_heading_when_there_are_none():
     rendered = render([table_section()])
     assert "Statements" not in rendered.html and "Statements" not in rendered.text
+
+
+# ---- the profile's time zone decides every clock time and date shown ----
+
+
+LATE_UNTIL = datetime(
+    2026, 11, 8, 20, 0, tzinfo=UTC
+)  # 1:30 AM on 9 Nov in India, 8 Nov in UTC
+
+
+def render_in(zone):
+    content = DigestContent(sections=[important([entry()])], other_count=0, total=1)
+    return render_digest(content, SINCE, LATE_UNTIL, Profile(timezone=zone))
+
+
+def test_the_window_and_subject_use_the_profiles_time_zone():
+    india = render_in("Asia/Kolkata")
+    assert "9 Nov" in india.subject and "1:30 AM" in india.text
+    utc = render_in("UTC")
+    assert "8 Nov" in utc.subject and "8:00 PM" in utc.text
+
+
+def test_without_a_profile_times_are_shown_in_utc():
+    content = DigestContent(sections=[important([entry()])], other_count=0, total=1)
+    rendered = render_digest(content, SINCE, LATE_UNTIL)
+    assert "8:00 PM" in rendered.text and "8 Nov" in rendered.subject

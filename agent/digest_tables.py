@@ -8,6 +8,7 @@ mail that looked like a bill can never sit among the real bills.
 
 import re
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from email.utils import parseaddr
@@ -16,6 +17,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, Field
 
 from agent.nodes.transactions import Transaction
+from agent.profile import DEFAULT_SYMBOLS, Profile
 from agent.schemas import Bill, Category, Classification, Email
 
 DUE_SOON_DAYS = 3
@@ -49,9 +51,29 @@ class TableData(BaseModel):
     )  # periodic records, no amount
 
 
-def money(amount: Decimal, currency: str, sign: str = "") -> str:
-    if currency == "INR":
-        return f"{sign}₹{amount:,.2f}"
+@dataclass(frozen=True)
+class Locale:
+    """What depends on the reader: their time zone and the symbols of their currencies."""
+
+    tz: ZoneInfo
+    symbols: dict[str, str]
+
+    @classmethod
+    def from_profile(cls, profile: Profile | None) -> "Locale":
+        profile = profile or Profile()
+        return cls(ZoneInfo(profile.timezone), dict(profile.currency_symbols))
+
+
+def money(
+    amount: Decimal,
+    currency: str,
+    sign: str = "",
+    symbols: dict[str, str] | None = None,
+) -> str:
+    """'₹1,500.00' for a currency with a symbol, 'CHF 20.00' (its code) for one without."""
+    symbol = (DEFAULT_SYMBOLS if symbols is None else symbols).get(currency)
+    if symbol:
+        return f"{sign}{symbol}{amount:,.2f}"
     return f"{sign}{currency} {amount:,.2f}"
 
 
@@ -87,13 +109,14 @@ def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
-def _total(items: list[tuple[Decimal, str]]) -> str:
-    """Sum per currency, e.g. 'INR 1,500.50' or 'INR 10.00 + USD 20.00'."""
+def _total(items: list[tuple[Decimal, str]], symbols: dict[str, str]) -> str:
+    """Sum per currency, e.g. '₹1,500.50' or '₹10.00 + $20.00'."""
     sums: dict[str, Decimal] = defaultdict(Decimal)
     for amount, currency in items:
         sums[currency] += amount
     return " + ".join(
-        money(total, currency) for currency, total in sorted(sums.items())
+        money(total, currency, symbols=symbols)
+        for currency, total in sorted(sums.items())
     )
 
 
@@ -141,6 +164,7 @@ def _bill_row(
     members: list[tuple[Email, Bill]],
     today: date | None,
     soon: date | None,
+    symbols: dict[str, str],
 ) -> TableRow:
     kind, vendor, amount, currency, due = key
     times = f" ×{len(members)}" if len(members) > 1 else ""
@@ -149,19 +173,21 @@ def _bill_row(
         cells=[
             kind,
             f"{vendor}{times}",
-            money(amount, currency),
+            money(amount, currency, symbols=symbols),
             due_label(due, today) if due else "-",
         ],
         highlight=bool(soon and due and due <= soon),
     )
 
 
-def _bill_summary_parts(groups: dict[BillKey, list[tuple[Email, Bill]]]) -> list[str]:
+def _bill_summary_parts(
+    groups: dict[BillKey, list[tuple[Email, Bill]]], symbols: dict[str, str]
+) -> list[str]:
     parts = []
     for word in ("bill", "receipt"):
         group = [(k[2], k[3]) for k in groups if k[0] == word]
         if group:
-            parts.append(f"{_plural(len(group), word)}: {_total(group)}")
+            parts.append(f"{_plural(len(group), word)}: {_total(group, symbols)}")
     return parts
 
 
@@ -171,22 +197,28 @@ def bills_table(
     bills: dict[str, Bill],
     max_items: int,
     now: datetime | None,
+    locale: Locale | None = None,
 ) -> TableData:
-    today = now.date() if now else None
+    locale = locale or Locale.from_profile(None)
+    today = now.astimezone(locale.tz).date() if now else None
     soon = today + timedelta(days=DUE_SOON_DAYS) if today else None
     groups = _bill_groups(ordered, classifications, bills)
-    rows = [_bill_row(key, members, today, soon) for key, members in groups.items()]
+    rows = [
+        _bill_row(key, members, today, soon, locale.symbols)
+        for key, members in groups.items()
+    ]
     return TableData(
         columns=["Type", "Biller", "Amount", "Due"],
         link_column=1,
         rows=rows[:max_items],
         omitted=max(len(rows) - max_items, 0),
-        summary=" · ".join(_bill_summary_parts(groups)) or "No amounts found",
+        summary=" · ".join(_bill_summary_parts(groups, locale.symbols))
+        or "No amounts found",
         unlisted=_refs([e for e in ordered if e.id not in bills]),
     )
 
 
-def _spending_parts(found: list[Transaction]) -> list[str]:
+def _spending_parts(found: list[Transaction], symbols: dict[str, str]) -> list[str]:
     spent = [tx for tx in found if tx.direction == "debit"]
     received = [tx for tx in found if tx.direction == "credit"]
     parts = []
@@ -196,16 +228,15 @@ def _spending_parts(found: list[Transaction]) -> list[str]:
             f"{via} {n}" for via, n in sorted(by_via, key=lambda p: (-p[1], p[0]))
         )
         parts.append(
-            f"spent {_total([(tx.amount, tx.currency) for tx in spent])} ({how})"
+            f"spent {_total([(tx.amount, tx.currency) for tx in spent], symbols)} ({how})"
         )
     if received:
         parts.append(
-            f"received {_total([(tx.amount, tx.currency) for tx in received])}"
+            f"received {_total([(tx.amount, tx.currency) for tx in received], symbols)}"
         )
     return parts
 
 
-LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 # Words too common to tie a booking mail to a payment ("Your ticket", "Payment confirmed", ...).
 _GENERIC_WORDS = {
     "your", "from", "this", "that", "with", "order", "orders", "booking", "ticket",
@@ -214,10 +245,10 @@ _GENERIC_WORDS = {
 }  # fmt: skip
 
 
-def _local_day(email: Email) -> date | None:
+def _local_day(email: Email, tz: ZoneInfo) -> date | None:
     if email.received_at is None:
         return None
-    return email.received_at.astimezone(LOCAL_TZ).date()
+    return email.received_at.astimezone(tz).date()
 
 
 def _brand_words(text: str) -> set[str]:
@@ -231,6 +262,7 @@ def _match_payments(
     groups: dict[BillKey, list[tuple[Email, Bill]]],
     bills: dict[str, Bill],
     debits: list[Transaction],
+    tz: ZoneInfo,
 ) -> list[tuple[str, object, str]]:
     """Which payment settles which bill or receipt, as (rule, what, payment email id).
 
@@ -252,20 +284,20 @@ def _match_payments(
                 # Paid after the bill arrived (the same day or later).
                 if tx_email.received_at and tx_email.received_at >= min(arrivals):
                     pairs.append(("bill", key, tx.email_id))
-            elif _local_day(tx_email) and _local_day(tx_email) == _local_day(
-                members[0][0]
+            elif _local_day(tx_email, tz) and _local_day(tx_email, tz) == _local_day(
+                members[0][0], tz
             ):
                 pairs.append(("receipt", key, tx.email_id))
     for email in ordered:
         is_receipt = classifications[email.id].category == Category.RECEIPTS
-        day = _local_day(email)
+        day = _local_day(email, tz)
         if not is_receipt or email.id in bills or day is None:
             continue
         name = parseaddr(email.sender)[0] or email.sender
         words = _brand_words(f"{name} {email.subject}")
         for tx in debits:
             tx_email = by_id[tx.email_id]
-            if _local_day(tx_email) == day and words & _brand_words(tx.payee or ""):
+            if _local_day(tx_email, tz) == day and words & _brand_words(tx.payee or ""):
                 pairs.append(("booking", email.id, tx.email_id))
     lefts = Counter((rule, what) for rule, what, _ in pairs)
     rights = Counter(tx_id for _, _, tx_id in pairs)
@@ -279,18 +311,23 @@ def money_table(
     transactions: dict[str, Transaction],
     max_items: int,
     now: datetime | None,
+    locale: Locale | None = None,
 ) -> TableData:
     """Bills, receipts and payments in ONE table (bills first), statements as a separate list.
 
     A payment that settles a bill marks it paid; a payment that matches a receipt (or a booking
     mail that carries no amount) is folded into it, so one purchase is one row."""
-    today = now.date() if now else None
+    locale = locale or Locale.from_profile(None)
+    symbols = locale.symbols
+    today = now.astimezone(locale.tz).date() if now else None
     soon = today + timedelta(days=DUE_SOON_DAYS) if today else None
     groups = _bill_groups(ordered, classifications, bills, bills_first=True)
     found = [transactions[e.id] for e in ordered if e.id in transactions]
     by_tx = {tx.email_id: tx for tx in found}
     debits = [tx for tx in found if tx.direction == "debit"]
-    matches = _match_payments(ordered, classifications, groups, bills, debits)
+    matches = _match_payments(
+        ordered, classifications, groups, bills, debits, locale.tz
+    )
     paid = {what for rule, what, _ in matches if rule == "bill"}
     via_for = {
         what: by_tx[tx_id].via for rule, what, tx_id in matches if rule == "receipt"
@@ -302,7 +339,7 @@ def money_table(
 
     rows = []
     for key, members in groups.items():
-        row = _bill_row(key, members, today, soon)
+        row = _bill_row(key, members, today, soon, symbols)
         if key in paid:
             row.cells[3], row.highlight = "paid", False
         elif key in via_for:
@@ -315,7 +352,7 @@ def money_table(
                 cells=[
                     "receipt",
                     clean_payee(tx.payee, tx.via),
-                    money(tx.amount, tx.currency),
+                    money(tx.amount, tx.currency, symbols=symbols),
                     tx.via,
                 ],
             )
@@ -329,7 +366,7 @@ def money_table(
                 cells=[
                     "received" if credit else "spent",
                     clean_payee(tx.payee, tx.via),
-                    money(tx.amount, tx.currency, "+" if credit else ""),
+                    money(tx.amount, tx.currency, "+" if credit else "", symbols),
                     tx.via,
                 ],
             )
@@ -343,12 +380,14 @@ def money_table(
     receipts += [(tx.amount, tx.currency) for tx in bookings.values()]
     parts = []
     if due:
-        parts.append(f"{_plural(len(due), 'bill')}: {_total(due)}")
+        parts.append(f"{_plural(len(due), 'bill')}: {_total(due, symbols)}")
     if paid:
         parts.append(f"{len(paid)} likely paid")
     if receipts:
-        parts.append(f"{_plural(len(receipts), 'receipt')}: {_total(receipts)}")
-    parts += _spending_parts(left_over)
+        parts.append(
+            f"{_plural(len(receipts), 'receipt')}: {_total(receipts, symbols)}"
+        )
+    parts += _spending_parts(left_over, symbols)
     if not parts and statements:
         parts = [_plural(len(statements), "statement")]
     return TableData(
@@ -372,8 +411,12 @@ def money_table(
 
 
 def transactions_table(
-    ordered: list[Email], transactions: dict[str, Transaction], max_items: int
+    ordered: list[Email],
+    transactions: dict[str, Transaction],
+    max_items: int,
+    locale: Locale | None = None,
 ) -> TableData:
+    symbols = (locale or Locale.from_profile(None)).symbols
     found = [transactions[e.id] for e in ordered if e.id in transactions]
     rows = [
         TableRow(
@@ -381,7 +424,12 @@ def transactions_table(
             cells=[
                 clean_payee(tx.payee, tx.via),
                 tx.via,
-                money(tx.amount, tx.currency, "+" if tx.direction == "credit" else ""),
+                money(
+                    tx.amount,
+                    tx.currency,
+                    "+" if tx.direction == "credit" else "",
+                    symbols,
+                ),
             ],
         )
         for tx in found
@@ -399,12 +447,14 @@ def transactions_table(
             )
             largest = max(spent, key=lambda tx: tx.amount)
             parts.append(
-                f"spent {_total([(tx.amount, tx.currency) for tx in spent])} ({how})"
+                f"spent {_total([(tx.amount, tx.currency) for tx in spent], symbols)} ({how})"
             )
-            parts.append(f"largest {money(largest.amount, largest.currency)}")
+            parts.append(
+                f"largest {money(largest.amount, largest.currency, symbols=symbols)}"
+            )
         if received:
             parts.append(
-                f"received {_total([(tx.amount, tx.currency) for tx in received])}"
+                f"received {_total([(tx.amount, tx.currency) for tx in received], symbols)}"
             )
         summary = " · ".join(parts)
     return TableData(

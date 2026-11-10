@@ -136,11 +136,12 @@ def prepare_daily(
         bills=state.get("bills"),
         transactions=state.get("transactions"),
         now=until,
+        profile=profile,
     )
     log.info("stage digest done after %.0fs", time.monotonic() - started)
     return DailyPlan(
         content=content,
-        rendered=render_digest(content, since, until),
+        rendered=render_digest(content, since, until, profile),
         proposals=state["proposals"],
         bill_items=collect_bill_items(state),
         keep_in_inbox=keep_in_inbox,

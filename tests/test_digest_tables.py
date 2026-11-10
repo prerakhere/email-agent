@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableLambda
 from agent.digest import build_digest
 from agent.digest_config import DigestConfig, DigestSection
 from agent.nodes.transactions import Transaction
+from agent.profile import Profile
 from agent.schemas import Bill, Category, Classification, Email
 
 NOW = datetime(2026, 11, 8, 3, 0, tzinfo=UTC)
@@ -135,7 +136,7 @@ def test_the_bills_line_totals_bills_and_receipts_separately_by_currency():
     }
     line = run(pairs, BILLS_CONFIG, bills=bills).sections[0].table.summary
     assert "2 bills" in line and "₹1,500.50" in line
-    assert "1 receipt" in line and "USD 20.00" in line
+    assert "1 receipt" in line and "$20.00" in line
 
 
 def test_bill_like_mail_with_no_extracted_amount_is_listed_below_not_in_the_table():
@@ -227,11 +228,11 @@ def test_without_a_clock_the_due_date_stays_a_plain_date():
     assert due_cell(date(2026, 11, 9), now=None) == "2026-11-09"
 
 
-def test_other_currencies_keep_their_code():
+def test_a_currency_with_no_symbol_keeps_its_code():
     pairs = [(email("1"), Category.RECEIPTS)]
-    found = {"1": bill("Shop", amount="20.00", currency="USD", due=None)}
+    found = {"1": bill("Shop", amount="20.00", currency="CHF", due=None)}
     row = run(pairs, BILLS_CONFIG, bills=found).sections[0].table.rows[0]
-    assert row.cells[2] == "USD 20.00"
+    assert row.cells[2] == "CHF 20.00"
 
 
 def repeated_bills(n=4):
@@ -412,3 +413,63 @@ def test_a_bill_due_soon_in_the_money_table_is_highlighted():
         pairs, bills={"b1": bill(due=date(2026, 11, 9))}, transactions={"p1": tx("p1")}
     ).table
     assert [r.highlight for r in table.rows] == [True, False]
+
+
+# ---- the profile decides currency symbols and what "today" means ----
+
+
+def run_with(profile, pairs, config, bills=None, now=NOW):
+    emails, classes = classify(pairs)
+    return build_digest(
+        emails,
+        classes,
+        config,
+        RunnableLambda(exploding),
+        RunnableLambda(exploding),
+        bills=bills or {},
+        transactions={},
+        now=now,
+        profile=profile,
+    )
+
+
+def amount_cell(profile, currency):
+    pairs = [(email("1"), Category.BILLS)]
+    content = run_with(
+        profile, pairs, BILLS_CONFIG, {"1": bill(amount="20.00", currency=currency)}
+    )
+    return content.sections[0].table.rows[0].cells[2]
+
+
+def test_default_symbols_cover_common_currencies_and_others_show_their_code():
+    assert amount_cell(None, "INR") == "₹20.00"
+    assert amount_cell(None, "USD") == "$20.00"
+    assert amount_cell(None, "JPY") == "JPY 20.00"
+
+
+def test_a_profile_can_add_its_own_currency_symbol():
+    assert amount_cell(Profile(currency_symbols={"CHF": "Fr"}), "CHF") == "Fr20.00"
+
+
+def test_the_totals_line_uses_the_profiles_symbols_too():
+    pairs = [(email("1"), Category.BILLS)]
+    content = run_with(
+        None, pairs, BILLS_CONFIG, {"1": bill(amount="20.00", currency="USD")}
+    )
+    assert "$20.00" in content.sections[0].table.summary
+
+
+LATE_NOW = datetime(
+    2026, 11, 8, 20, 0, tzinfo=UTC
+)  # 9 Nov, 1:30 AM in India; still 8 Nov in UTC
+
+
+def test_a_due_date_is_relative_to_todays_date_in_the_profiles_zone():
+    pairs = [(email("1"), Category.BILLS)]
+    bills = {"1": bill(due=date(2026, 11, 9))}
+    india = run_with(
+        Profile(timezone="Asia/Kolkata"), pairs, BILLS_CONFIG, bills, LATE_NOW
+    )
+    utc = run_with(Profile(timezone="UTC"), pairs, BILLS_CONFIG, bills, LATE_NOW)
+    assert india.sections[0].table.rows[0].cells[3] == "today"
+    assert utc.sections[0].table.rows[0].cells[3] == "tomorrow"

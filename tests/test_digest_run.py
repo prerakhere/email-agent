@@ -7,6 +7,7 @@ from agent.digest_config import DEFAULT_CONFIG
 from agent.digest_run import create_digest
 from agent.nodes.classify import LLMBatch, LLMItem
 from agent.nodes.summarize import GroupText, SummaryBatch, SummaryItem
+from agent.profile import Profile
 from agent.schemas import Category, Email
 
 SINCE = datetime(2026, 11, 7, 2, 30, tzinfo=UTC)
@@ -82,6 +83,9 @@ def make_digest(emails, gmail=None):
         RunnableLambda(group),
         since=SINCE,
         until=UNTIL,
+        profile=Profile(
+            timezone="Asia/Kolkata"
+        ),  # the expected times below are Indian time
     )
     return content, rendered, gmail
 
