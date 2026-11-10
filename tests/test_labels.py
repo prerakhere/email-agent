@@ -110,3 +110,22 @@ def test_agent_labels_can_be_ignored_while_the_users_own_folders_still_count():
     assert (
         category_for_labels(both) == Category.PROMOTIONS
     )  # trusted by default: unchanged
+
+
+# ---- statements: a periodic record with nothing to pay ----
+
+
+def test_a_statement_goes_to_the_users_statements_folder_when_it_exists():
+    from agent.labels import resolve_label
+    from agent.schemas import Category
+
+    existing = ["Finances/Statements, Receipts"]
+    assert resolve_label(Category.STATEMENTS, existing) == existing[0]
+
+
+def test_a_statement_falls_back_to_an_agent_label_and_reads_back_from_it():
+    from agent.labels import category_for_labels, resolve_label
+    from agent.schemas import Category
+
+    assert resolve_label(Category.STATEMENTS, []) == "Agent/Statements"
+    assert category_for_labels(["Agent/Statements"]) == Category.STATEMENTS

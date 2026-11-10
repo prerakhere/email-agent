@@ -13,6 +13,7 @@ class Category(StrEnum):
     BILLS = "bills"
     RECEIPTS = "receipts"
     TRANSACTIONS = "transactions"
+    STATEMENTS = "statements"
     NEWSLETTERS = "newsletters"
     PROMOTIONS = "promotions"
     IMPORTANT = "important"

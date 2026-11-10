@@ -368,17 +368,18 @@ def due_table(highlight=True):
     return table_section(highlight=highlight)
 
 
-def test_the_headline_says_what_needs_you_and_what_can_wait():
+def test_the_headline_says_what_is_important_and_due_soon_and_nothing_more():
     sections = [important([entry(), entry("m2")]), due_table()]
     rendered = render(sections, total=20)
     for page in (rendered.html, rendered.text):
-        assert "2 important" in page and "1 due soon" in page and "17 can wait" in page
+        assert "2 important" in page and "1 due soon" in page
+        assert "can wait" not in page
 
 
 def test_a_quiet_day_says_nothing_is_urgent():
     rendered = render([group_section()], total=12)
     assert "Nothing urgent" in rendered.html and "Nothing urgent" in rendered.text
-    assert "12 can wait" in rendered.html
+    assert "can wait" not in rendered.html
 
 
 def test_an_empty_digest_says_no_new_mail_in_the_headline():
@@ -403,3 +404,40 @@ def test_three_big_number_tiles_show_emails_important_and_due_soon():
         assert f">{label}</div>" in html
     numbers = re.findall(r'font-size:28px[^"]*">(\d+)</div>', html)
     assert numbers == ["20", "2", "1"]
+
+
+# ---- Round 3c: statements shown as a quiet list under the Money table ----
+
+
+def statements_section(statements, rows=None):
+    return SectionSummary(
+        title="Money",
+        mode="table",
+        count=len(statements) + len(rows or []),
+        table=TableData(
+            columns=["What", "Who", "Amount", "When"],
+            link_column=1,
+            rows=rows or [],
+            summary="1 statement",
+            statements=statements,
+        ),
+    )
+
+
+def test_statements_are_listed_with_a_link_under_a_statements_heading():
+    ref = EmailRef(
+        email_id="s1",
+        sender="Example Bank <alerts@bank.example>",
+        subject="Savings statement, Oct",
+    )
+    rendered = render([statements_section([ref])])
+    for page in (rendered.html, rendered.text):
+        assert "Statements" in page and "Savings statement, Oct" in page
+        assert "alerts@bank.example" not in page and "Example Bank" in page
+    assert 'href="https://mail.google.com/mail/u/0/#all/s1"' in rendered.html
+    assert "#all/s1" in rendered.text
+
+
+def test_no_statements_heading_when_there_are_none():
+    rendered = render([table_section()])
+    assert "Statements" not in rendered.html and "Statements" not in rendered.text

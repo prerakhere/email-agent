@@ -14,7 +14,13 @@ from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
 from agent.digest_config import DigestConfig, DigestSection
-from agent.digest_tables import EmailRef, TableData, bills_table, transactions_table
+from agent.digest_tables import (
+    EmailRef,
+    TableData,
+    bills_table,
+    money_table,
+    transactions_table,
+)
 from agent.nodes.summarize import (
     EmailSummary,
     GroupSummary,
@@ -69,11 +75,14 @@ def _summarise_section(
 ) -> SectionSummary:
     ordered = _newest_first(emails)
     if section.mode == "table":
-        table = (
-            bills_table(ordered, classifications, bills, section.max_items, now)
-            if section.table == "bills"
-            else transactions_table(ordered, transactions, section.max_items)
-        )
+        if section.table == "money":
+            table = money_table(
+                ordered, classifications, bills, transactions, section.max_items, now
+            )
+        elif section.table == "bills":
+            table = bills_table(ordered, classifications, bills, section.max_items, now)
+        else:
+            table = transactions_table(ordered, transactions, section.max_items)
         return SectionSummary(
             title=section.title, mode="table", count=len(ordered), table=table
         )

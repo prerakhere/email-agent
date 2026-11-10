@@ -186,5 +186,6 @@ def test_the_scheduled_run_passes_the_transaction_extractor_through():
     gmail = RecordingGmail([*EMAILS, email("5", "UPI txn alert")])
     deps = make_deps(gmail=gmail)
     result, _, _ = run({}, deps)
-    spend = next(s for s in result.content.sections if s.title == "Transactions")
-    assert spend.table is not None and len(spend.table.rows) == 1
+    spend = next(s for s in result.content.sections if s.title == "Bills and payments")
+    assert spend.table is not None
+    assert [r.cells[0] for r in spend.table.rows].count("spent") == 1

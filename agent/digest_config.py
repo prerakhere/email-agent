@@ -11,7 +11,7 @@ To change the digest, copy the defaults into `digest.toml` at the repo root (git
     title = "Work"
     categories = ["important", "job_alerts"]
     style = "List action points and deadlines."
-    mode = "per_email"     # or "group", or "table" (then also: table = "bills" or "transactions")
+    mode = "per_email"     # or "group", or "table" (then also: table = "money", "bills" or "transactions")
     max_items = 10
     body_chars = 1500      # how much of each email the model reads (200 to 3000)
 
@@ -36,8 +36,8 @@ class DigestSection(BaseModel):
     # per_email: one line per email; group: one line for the whole section; table: rows built from
     # the amounts extracted from the mail (no model summary), shown as a table.
     mode: Literal["per_email", "group", "table"] = "per_email"
-    table: Literal["bills", "transactions"] | None = (
-        None  # required when mode is "table"
+    table: Literal["bills", "transactions", "money"] | None = (
+        None  # required when mode is "table"; "money" merges bills, receipts and payments
     )
     max_items: int = Field(default=10, ge=1)
     # How much of each email's body the model reads (after redaction): more costs more tokens.
@@ -86,18 +86,16 @@ DEFAULT_CONFIG = DigestConfig(
             max_items=15,
         ),
         DigestSection(
-            title="Bills and receipts",
-            categories=[Category.BILLS, Category.RECEIPTS],
-            style="One line per bill in a table: biller, amount and due date.",
+            title="Bills and payments",
+            categories=[
+                Category.BILLS,
+                Category.RECEIPTS,
+                Category.TRANSACTIONS,
+                Category.STATEMENTS,
+            ],
+            style="One table, one line per item: bills (soonest due first), receipts and payments; statements listed.",
             mode="table",
-            table="bills",
-        ),
-        DigestSection(
-            title="Transactions",
-            categories=[Category.TRANSACTIONS],
-            style="One line of totals above a table: amount, how paid, and payee.",
-            mode="table",
-            table="transactions",
+            table="money",
             max_items=30,  # a busy day has many small payments
         ),
         DigestSection(

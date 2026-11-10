@@ -363,4 +363,42 @@ def test_festival_greetings_and_fundraising_appeals_are_promotions_not_newslette
 
 def test_only_mail_written_by_a_real_person_gets_the_benefit_of_the_doubt_for_important():
     text = SYSTEM_PROMPT.lower()
-    assert "written by a real person matters, choose important" in text
+    assert "written personally by a real person matters, choose important" in text
+
+
+# ---- mass or list mail is not important, even when a named person signs it ----
+
+
+def test_mass_mail_signed_by_a_person_is_not_important():
+    text = SYSTEM_PROMPT.lower()
+    assert "mass or list mail" in text and "signed by a person" in text
+    assert "never important" in text
+
+
+def test_webinars_and_event_invitations_from_a_list_are_notifications_not_important():
+    text = SYSTEM_PROMPT.lower()
+    assert "webinars" in text and "event invitations" in text
+
+
+def test_referral_and_sign_up_bonuses_are_promotions():
+    text = SYSTEM_PROMPT.lower()
+    assert "referral" in text and "bonus" in text
+
+
+def test_a_creators_or_authors_list_is_a_newsletter_even_when_it_reads_personal():
+    text = SYSTEM_PROMPT.lower()
+    assert "creator" in text and "newsletter" in text
+
+
+# ---- statements are records, not bills ----
+
+
+def test_a_periodic_account_statement_with_nothing_to_pay_is_a_statement():
+    text = SYSTEM_PROMPT.lower()
+    assert "- statements:" in text
+    assert "monthly statement" in text and "nothing to pay" in text
+
+
+def test_a_statement_that_shows_an_amount_due_is_still_a_bill():
+    text = SYSTEM_PROMPT.lower()
+    assert "amount due and a due date is a bill" in text

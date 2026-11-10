@@ -78,7 +78,7 @@ def test_each_email_lands_in_the_section_that_owns_its_category():
     ]
     result, _ = digest(pairs)
     (section,) = result.sections
-    assert section.title == "Bills and receipts" and section.count == 2
+    assert section.title == "Bills and payments" and section.count == 2
     # Bills are a table now: with no amounts extracted, both mails are listed as "no amount found",
     # in arrival order, and nothing is sent to the model for them.
     assert section.mode == "table" and section.table.rows == []

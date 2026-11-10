@@ -14,6 +14,7 @@ from agent.schemas import Category
 PREFERRED_EXISTING: dict[Category, tuple[str, ...]] = {
     Category.BILLS: ("Finances/Statements, Receipts",),
     Category.RECEIPTS: ("Finances/Statements, Receipts",),
+    Category.STATEMENTS: ("Finances/Statements, Receipts",),
     Category.NEWSLETTERS: ("Newsletters",),
 }
 
@@ -21,6 +22,7 @@ AGENT_FALLBACK: dict[Category, str] = {
     Category.BILLS: "Agent/Bills",
     Category.RECEIPTS: "Agent/Receipts",
     Category.TRANSACTIONS: "Agent/Transactions",
+    Category.STATEMENTS: "Agent/Statements",
     Category.NEWSLETTERS: "Agent/Newsletters",
     Category.PROMOTIONS: "Agent/Promotions",
     Category.IMPORTANT: "Agent/Important",

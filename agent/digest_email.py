@@ -128,7 +128,7 @@ def _due_soon_count(content: DigestContent) -> int:
 
 
 def _headline(content: DigestContent) -> str:
-    """One human line: what needs the reader, then how much can wait. No model call."""
+    """One human line: what is important and what is due soon. No model call."""
     if content.total == 0:
         return "No new mail"
     important, due = _important_count(content), _due_soon_count(content)
@@ -139,8 +139,6 @@ def _headline(content: DigestContent) -> str:
         parts.append(f"{due} due soon")
     if not parts:
         parts.append("Nothing urgent")
-    waiting = max(content.total - important - due, 0)
-    parts.append(f"{waiting} can wait")
     return " · ".join(parts)
 
 
@@ -167,6 +165,13 @@ def _text_table(table: TableData) -> list[str]:
         lines.append(f"{mark}{' | '.join(row.cells)} | {_link(row.email_id)}")
     if table.omitted:
         lines.append(f"+{table.omitted} more not shown")
+    if table.statements:
+        lines.append("Statements:")
+        for ref in table.statements:
+            lines += [
+                f"* {ref.subject} - {_sender_name(ref.sender)}",
+                f"  {_link(ref.email_id)}",
+            ]
     if table.unlisted:
         lines.append("No amount found:")
         for ref in table.unlisted:
@@ -331,6 +336,13 @@ def _html_table(table: TableData) -> str:
     ]
     if table.omitted:
         parts.append(f'<p style="{MUTED}">+{table.omitted} more not shown</p>')
+    if table.statements:
+        parts.append(
+            f'<p style="{MUTED}">Statements:</p>'
+            '<ul style="margin:0;padding-left:18px">'
+            + "".join(_html_ref(r) for r in table.statements)
+            + "</ul>"
+        )
     if table.unlisted:
         parts.append(
             f'<p style="{MUTED}">No amount found:</p>'

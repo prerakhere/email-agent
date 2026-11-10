@@ -282,3 +282,133 @@ def test_an_unreadable_upi_handle_becomes_upi_payment():
 def test_a_normal_payee_name_is_left_alone():
     assert payee_cell("Cafe Blue") == "Cafe Blue"
     assert payee_cell(None, via="credit card") == "-"
+
+
+# ---- Round 3c: one Money table for bills, receipts and payments, with statements beside it ----
+
+MONEY_CONFIG = DigestConfig(
+    sections=[
+        DigestSection(
+            title="Money",
+            categories=["bills", "receipts", "transactions", "statements"],
+            mode="table",
+            table="money",
+            max_items=30,
+        )
+    ]
+)
+
+
+def money_section(pairs, bills=None, transactions=None, now=NOW, config=MONEY_CONFIG):
+    return run(pairs, config, bills=bills, transactions=transactions, now=now).sections[
+        0
+    ]
+
+
+def test_bills_receipts_and_payments_share_one_table_with_bills_first():
+    pairs = [
+        (email("p1"), Category.TRANSACTIONS),
+        (email("r1"), Category.RECEIPTS),
+        (email("b1"), Category.BILLS),
+        (email("p2"), Category.TRANSACTIONS),
+    ]
+    section = money_section(
+        pairs,
+        bills={
+            "b1": bill("HDFC Bank", "5633.00", date(2026, 11, 9)),
+            "r1": bill("Amazon.in", "85004.00", None),
+        },
+        transactions={
+            "p1": tx("p1", "450.00", "Cafe Blue", "UPI", "debit"),
+            "p2": tx("p2", "200.00", None, "credit card", "credit"),
+        },
+    )
+    table = section.table
+    assert table.columns == ["What", "Who", "Amount", "When"] and table.link_column == 1
+    assert [r.cells for r in table.rows] == [
+        ["bill", "HDFC Bank", "₹5,633.00", "tomorrow"],
+        ["receipt", "Amazon.in", "₹85,004.00", "-"],
+        ["spent", "Cafe Blue", "₹450.00", "UPI"],
+        ["received", "-", "+₹200.00", "credit card"],
+    ]
+    assert section.count == 4
+
+
+def test_the_money_summary_covers_bills_receipts_spending_and_money_in():
+    pairs = [
+        (email("b1"), Category.BILLS),
+        (email("r1"), Category.RECEIPTS),
+        (email("p1"), Category.TRANSACTIONS),
+        (email("p2"), Category.TRANSACTIONS),
+    ]
+    line = money_section(
+        pairs,
+        bills={"b1": bill(amount="1000.00"), "r1": bill("Shop", amount="20.00")},
+        transactions={
+            "p1": tx("p1", "100.00", via="UPI"),
+            "p2": tx("p2", "200.00", direction="credit"),
+        },
+    ).table.summary
+    assert "1 bill: ₹1,000.00" in line and "1 receipt: ₹20.00" in line
+    assert "spent ₹100.00" in line and "received ₹200.00" in line
+
+
+def test_statements_are_a_separate_list_not_table_rows_and_not_no_amount_mail():
+    pairs = [
+        (email("s1", "Account statement"), Category.STATEMENTS),
+        (email("b1"), Category.BILLS),
+    ]
+    table = money_section(pairs, bills={"b1": bill()}).table
+    assert [r.email_id for r in table.statements] == ["s1"]
+    assert [r.email_id for r in table.rows] == ["b1"]
+    assert table.unlisted == []
+
+
+def test_a_section_with_only_statements_still_works():
+    section = money_section([(email("s1", "Account statement"), Category.STATEMENTS)])
+    assert section.table.rows == [] and len(section.table.statements) == 1
+    assert section.table.summary  # says something sensible
+
+
+def test_money_mail_with_nothing_extracted_is_listed_as_no_amount_found():
+    pairs = [
+        (email("b1", "Odd offer"), Category.BILLS),
+        (email("p1", "odd alert"), Category.TRANSACTIONS),
+    ]
+    table = money_section(pairs).table
+    assert sorted(r.email_id for r in table.unlisted) == ["b1", "p1"]
+
+
+def test_money_rows_beyond_the_limit_are_counted_and_the_totals_cover_them_all():
+    config = DigestConfig(
+        sections=[
+            DigestSection(
+                title="Money",
+                categories=["transactions"],
+                mode="table",
+                table="money",
+                max_items=2,
+            )
+        ]
+    )
+    pairs = [(email(str(i)), Category.TRANSACTIONS) for i in range(5)]
+    found = {str(i): tx(str(i), "10.00") for i in range(5)}
+    table = money_section(pairs, transactions=found, config=config).table
+    assert len(table.rows) == 2 and table.omitted == 3
+    assert "spent ₹50.00" in table.summary
+
+
+def test_repeated_identical_bills_still_collapse_in_the_money_table():
+    pairs = [(email(str(i)), Category.BILLS) for i in range(3)]
+    found = {str(i): bill("Furlenco", "496.19", date(2026, 11, 20)) for i in range(3)}
+    table = money_section(pairs, bills=found).table
+    assert len(table.rows) == 1 and table.rows[0].cells[1] == "Furlenco ×3"
+    assert "1 bill: ₹496.19" in table.summary
+
+
+def test_a_bill_due_soon_in_the_money_table_is_highlighted():
+    pairs = [(email("b1"), Category.BILLS), (email("p1"), Category.TRANSACTIONS)]
+    table = money_section(
+        pairs, bills={"b1": bill(due=date(2026, 11, 9))}, transactions={"p1": tx("p1")}
+    ).table
+    assert [r.highlight for r in table.rows] == [True, False]

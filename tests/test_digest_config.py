@@ -23,8 +23,7 @@ def test_the_defaults_cover_the_sections_the_digest_needs_in_order():
     titles = [s.title for s in DEFAULT_CONFIG.sections]
     assert titles == [
         "Important",
-        "Bills and receipts",
-        "Transactions",
+        "Bills and payments",
         "Job alerts",
         "Newsletters",
         "Promotions",
@@ -45,8 +44,8 @@ def test_default_job_alerts_are_summarised_as_a_group_not_one_by_one():
 
 
 def test_section_for_finds_the_section_that_owns_a_category():
-    assert DEFAULT_CONFIG.section_for(Category.BILLS).title == "Bills and receipts"
-    assert DEFAULT_CONFIG.section_for(Category.RECEIPTS).title == "Bills and receipts"
+    assert DEFAULT_CONFIG.section_for(Category.BILLS).title == "Bills and payments"
+    assert DEFAULT_CONFIG.section_for(Category.RECEIPTS).title == "Bills and payments"
 
 
 def test_every_category_has_a_section_in_the_defaults():
@@ -165,17 +164,15 @@ def test_body_size_can_be_set_in_the_toml_file(tmp_path):
     assert load_digest_config(path).sections[0].body_chars == 2500
 
 
-def test_bills_and_transactions_are_tables_by_default():
-    bills = DEFAULT_CONFIG.section_for(Category.BILLS)
-    spend = DEFAULT_CONFIG.section_for(Category.TRANSACTIONS)
-    assert (bills.mode, bills.table) == ("table", "bills")
-    assert (spend.mode, spend.table) == ("table", "transactions")
-    assert spend.max_items >= 20  # a busy day has many small payments
+def test_money_mail_is_one_table_by_default():
+    money = DEFAULT_CONFIG.section_for(Category.BILLS)
+    assert (money.mode, money.table) == ("table", "money")
+    assert money.max_items >= 20  # a busy day has many small payments
 
 
-def test_transactions_have_their_own_section():
+def test_transactions_live_inside_the_money_section():
     section = DEFAULT_CONFIG.section_for(Category.TRANSACTIONS)
-    assert section is not None and section.title == "Transactions"
+    assert section is not None and section.title == "Bills and payments"
 
 
 def test_every_default_section_asks_for_a_single_line():
@@ -216,4 +213,26 @@ def test_a_table_section_can_be_set_in_the_toml_file(tmp_path):
         spend.mode == "table"
         and spend.table == "transactions"
         and spend.max_items == 30
+    )
+
+
+def test_the_default_digest_has_one_money_section_for_all_money_mail():
+    money = DEFAULT_CONFIG.section_for(Category.BILLS)
+    assert (
+        money.title == "Bills and payments"
+        and money.mode == "table"
+        and money.table == "money"
+    )
+    for category in (
+        Category.RECEIPTS,
+        Category.TRANSACTIONS,
+        Category.STATEMENTS,
+    ):
+        assert DEFAULT_CONFIG.section_for(category) is money
+
+
+def test_the_older_separate_bills_and_transactions_tables_still_validate():
+    DigestSection(title="B", categories=["bills"], mode="table", table="bills")
+    DigestSection(
+        title="T", categories=["transactions"], mode="table", table="transactions"
     )
