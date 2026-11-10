@@ -13,6 +13,7 @@ from agent.digest import DigestContent, build_digest
 from agent.digest_config import DigestConfig
 from agent.digest_email import RenderedDigest, render_digest
 from agent.graph import build_graph
+from agent.profile import Profile
 from agent.schemas import Category
 
 
@@ -28,6 +29,7 @@ def create_digest(
     max_results: int = 500,
     extractor: Runnable | None = None,
     transaction_extractor: Runnable | None = None,
+    profile: Profile | None = None,
 ) -> tuple[DigestContent, RenderedDigest]:
     graph = build_graph(
         gmail,
@@ -37,6 +39,7 @@ def create_digest(
         extractor=extractor,
         transaction_extractor=transaction_extractor,
         max_results=max_results,
+        profile=profile,
     )
     state = graph.invoke({})
     content = build_digest(

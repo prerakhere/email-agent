@@ -32,12 +32,14 @@ from agent.nodes.classify import build_classifier
 from agent.nodes.extract import build_extractor
 from agent.nodes.summarize import build_group_summarizer, build_summarizer
 from agent.nodes.transactions import build_transaction_extractor
+from agent.profile import load_profile
 from agent.rules import load_rules
 from agent.sheets_client import SheetsClient
 
 load_dotenv(ROOT / ".env")
 
 CONFIG_PATH = ROOT / "digest.toml"  # optional; defaults are used when absent
+PROFILE_PATH = ROOT / "profile.toml"  # optional personal taste; neutral when absent
 
 
 def main() -> None:
@@ -86,6 +88,7 @@ def main() -> None:
         keep_in_inbox=keep_in_inbox,
         max_results=args.max_results,
         transaction_extractor=build_transaction_extractor(llm),
+        profile=load_profile(PROFILE_PATH),
     )
     args.preview.write_text(plan.rendered.html)
 

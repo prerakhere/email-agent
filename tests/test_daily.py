@@ -11,6 +11,7 @@ from agent.nodes.classify import LLMBatch, LLMItem
 from agent.nodes.extract import LLMBill
 from agent.nodes.summarize import GroupText, SummaryBatch, SummaryItem
 from agent.nodes.transactions import LLMTransactionBatch, LLMTransactionItem
+from agent.profile import Profile
 from agent.schemas import Category, Email
 
 SINCE = datetime(2026, 11, 8, 0, 30, tzinfo=UTC)  # 6:00 AM IST
@@ -390,3 +391,35 @@ def test_the_transaction_table_is_in_the_email_that_gets_sent():
     _subject, text, html = gmail.sent[0]
     assert "<table" in html and "spent ₹50.00" in html and "₹50.00" in html
     assert "spent ₹50.00" in text and "spent | Cafe | ₹50.00 | UPI" in text
+
+
+class GmailWithReadingList(FakeGmail):
+    def list_label_names(self):
+        return [*LABEL_IDS, "Reading list"]
+
+
+def newsletter_labels(profile):
+    models = Models()
+    plan = prepare_daily(
+        GmailWithReadingList(TX_EMAILS),
+        {},
+        DEFAULT_CONFIG,
+        models.classifier,
+        models.extractor,
+        models.summarizer,
+        models.group,
+        since=SINCE,
+        until=UNTIL,
+        transaction_extractor=models.tx_extractor,
+        profile=profile,
+    )
+    return {p.label for p in plan.proposals if p.category == Category.NEWSLETTERS}
+
+
+def test_the_profile_decides_which_existing_label_newsletters_are_filed_into():
+    profile = Profile(file_into={Category.NEWSLETTERS: ["Reading list"]})
+    assert newsletter_labels(profile) == {"Reading list"}
+
+
+def test_without_a_profile_newsletters_get_the_agent_label():
+    assert newsletter_labels(None) == {"Agent/Newsletters"}

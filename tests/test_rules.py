@@ -1,6 +1,19 @@
 from agent.rules import labels_to_categories, learn_rules, load_rules, save_rules
 from agent.schemas import Category
 
+# A person's folders that teach a category (what a profile's learn_from_folders holds).
+FOLDERS = {
+    "Newsletters": Category.NEWSLETTERS,
+    "To Go Through": Category.NEWSLETTERS,
+    "Finances/Statements, Receipts": Category.BILLS,
+    "Finances/Statements, Receipts/Donations": Category.RECEIPTS,
+    "Finances/subscriptions": Category.BILLS,
+}
+
+
+def categories(labels):
+    return labels_to_categories(labels, FOLDERS)
+
 
 def samples(sender: str, category: Category, n: int) -> list[tuple[str, Category]]:
     return [(sender, category)] * n
@@ -109,7 +122,7 @@ def test_load_rules_returns_empty_dict_when_file_is_missing(tmp_path):
 
 
 def test_mapped_folders_and_their_sublabels_get_a_category():
-    result = labels_to_categories(
+    result = categories(
         [
             "Newsletters",
             "To Go Through",
@@ -137,16 +150,16 @@ def test_unmapped_labels_are_left_out():
         "Job Applications",
         "Travel.",
     ]
-    assert labels_to_categories(labels) == {}
+    assert categories(labels) == {}
 
 
 def test_lookalike_label_names_do_not_match():
     # "Newsletters-old" is not underneath "Newsletters".
-    assert labels_to_categories(["Newsletters-old", "To Go Through2"]) == {}
+    assert categories(["Newsletters-old", "To Go Through2"]) == {}
 
 
 def test_label_matching_ignores_case():
-    result = labels_to_categories(["newsletters", "TO GO THROUGH/Medium"])
+    result = categories(["newsletters", "TO GO THROUGH/Medium"])
     assert result == {
         "newsletters": Category.NEWSLETTERS,
         "TO GO THROUGH/Medium": Category.NEWSLETTERS,
@@ -154,11 +167,11 @@ def test_label_matching_ignores_case():
 
 
 def test_no_labels_gives_empty_mapping():
-    assert labels_to_categories([]) == {}
+    assert categories([]) == {}
 
 
 def test_most_specific_folder_wins_over_its_parent():
-    result = labels_to_categories(
+    result = categories(
         [
             "Finances/Statements, Receipts",
             "Finances/Statements, Receipts/Donations",
@@ -174,3 +187,9 @@ def test_most_specific_folder_wins_over_its_parent():
         "Finances/Statements, Receipts/AWS Bills": Category.BILLS,
         "Finances/Statements, Receipts/Loan, EMI": Category.BILLS,
     }
+
+
+def test_with_no_folders_configured_no_label_teaches_anything():
+    assert (
+        labels_to_categories(["Newsletters", "Finances/Statements, Receipts"], {}) == {}
+    )

@@ -35,6 +35,7 @@ from agent.graph import BILLING, build_graph, collect_bill_items
 from agent.llm import REQUIRED, build_llm
 from agent.nodes.classify import build_classifier
 from agent.nodes.extract import build_extractor
+from agent.profile import load_profile
 from agent.report import format_apply_report, format_bill_plan, format_table
 from agent.rules import load_rules
 from agent.sheets_client import SheetsClient
@@ -80,6 +81,7 @@ def main() -> None:
         days=args.days,
         max_results=args.max_results,
         extractor=build_extractor(llm),
+        profile=load_profile(ROOT / "profile.toml"),
     )
     state = graph.invoke({}, config={"tags": ["apply"], "metadata": {"phase": 4}})
     print(format_table(state["proposals"]))

@@ -14,7 +14,7 @@ run failed the job raises, so Azure marks the execution failed and its alert can
 
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -23,6 +23,7 @@ from langchain_core.runnables import Runnable
 from agent.auth import SignInExpiredError
 from agent.daily import DailyResult, execute_daily, prepare_daily
 from agent.digest_config import DigestConfig
+from agent.profile import Profile
 from agent.schemas import Category
 
 log = logging.getLogger("gmail_agent.job")
@@ -41,6 +42,7 @@ class Dependencies:
     summarizer: Runnable
     group_summarizer: Runnable
     transaction_extractor: Runnable | None = None
+    profile: Profile = field(default_factory=Profile)
 
 
 class JobFailedError(RuntimeError):
@@ -81,6 +83,7 @@ def run_scheduled(
             until=now,
             keep_in_inbox=keep_in_inbox,
             transaction_extractor=deps.transaction_extractor,
+            profile=deps.profile,
         )
     except SignInExpiredError:
         raise  # its message is ours: it says what to do and contains no secret

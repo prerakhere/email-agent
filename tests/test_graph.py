@@ -7,6 +7,7 @@ from agent.graph import build_graph, collect_bill_items, collect_transactions
 from agent.nodes.classify import DEFAULT_CONCURRENCY, LLMBatch, LLMItem
 from agent.nodes.extract import LLMBill
 from agent.nodes.transactions import LLMTransactionBatch, LLMTransactionItem
+from agent.profile import Profile
 from agent.schemas import Category, Email
 
 
@@ -65,8 +66,23 @@ class FakeChain:
 RULES = {"bytebytego.com": Category.NEWSLETTERS}
 
 
+# A person's taste: folders that teach a category and existing labels to file into.
+PROFILE = Profile(
+    learn_from_folders={
+        "Newsletters": Category.NEWSLETTERS,
+        "To Go Through": Category.NEWSLETTERS,
+        "Finances/Statements, Receipts": Category.BILLS,
+    },
+    file_into={
+        Category.BILLS: ["Finances/Statements, Receipts"],
+        Category.NEWSLETTERS: ["Newsletters"],
+    },
+)
+
+
 def run(emails, chain, rules=RULES, labels=(), label_ids=None, **kwargs):
     gmail = FakeGmail(emails, labels, label_ids)
+    kwargs.setdefault("profile", PROFILE)
     graph = build_graph(gmail, rules, chain.runnable, **kwargs)
     return graph.invoke({}), gmail
 
@@ -447,6 +463,7 @@ def test_window_mode_still_extracts_bills_from_labelled_mail():
         FakeChain().runnable,
         since=SINCE,
         extractor=extractor.runnable,
+        profile=PROFILE,
     )
     state = graph.invoke({})
     assert state["classifications"]["1"].category == Category.BILLS
@@ -581,3 +598,14 @@ def test_the_agents_own_labels_can_be_rechecked_while_the_users_folders_stay_tru
         state["classifications"]["2"].category == Category.NEWSLETTERS
     )  # the user's folder wins
     assert state["proposals"] == []  # filed mail never gets a second label
+
+
+def test_with_no_profile_labels_are_agent_labels_and_user_folders_teach_nothing():
+    chain = FakeChain(Category.NEWSLETTERS, 0.9)
+    state, _ = run(
+        [make_email("1", "deals@shop.com", "hello")],
+        chain,
+        labels=["Newsletters"],
+        profile=Profile(),
+    )
+    assert state["proposals"][0].label == "Agent/Newsletters"

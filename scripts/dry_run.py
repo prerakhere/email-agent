@@ -25,6 +25,7 @@ from agent.gmail_client import GmailClient
 from agent.graph import build_graph
 from agent.llm import REQUIRED, build_llm
 from agent.nodes.classify import build_classifier
+from agent.profile import load_profile
 from agent.report import format_sent_preview, format_table
 from agent.rules import load_rules
 
@@ -74,6 +75,7 @@ def main() -> None:
         build_classifier(llm),
         days=args.days,
         max_results=args.max_results,
+        profile=load_profile(ROOT / "profile.toml"),
     )
 
     print("DRY RUN: reading Gmail only, nothing will be changed.\n")

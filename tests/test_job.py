@@ -5,9 +5,11 @@ import pytest
 from langchain_core.runnables import RunnableLambda
 from test_daily import EMAILS, FakeGmail, FakeSheets, Models, email
 
+from agent import job
 from agent.auth import SignInExpiredError
 from agent.digest_config import DEFAULT_CONFIG
 from agent.job import Dependencies, JobFailedError, run_scheduled
+from agent.profile import Profile
 
 NOW = datetime(2026, 11, 9, 0, 30, tzinfo=UTC)  # 6:00 AM IST
 
@@ -189,3 +191,22 @@ def test_the_scheduled_run_passes_the_transaction_extractor_through():
     spend = next(s for s in result.content.sections if s.title == "Bills and payments")
     assert spend.table is not None
     assert [r.cells[0] for r in spend.table.rows].count("spent") == 1
+
+
+def test_the_scheduled_run_hands_the_profile_to_the_daily_run(monkeypatch):
+    deps = make_deps()
+    deps.profile = Profile(timezone="Asia/Kolkata")
+    captured = {}
+    real = job.prepare_daily
+
+    def spy(*args, **kwargs):
+        captured.update(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(job, "prepare_daily", spy)
+    run({}, deps)
+    assert captured["profile"].timezone == "Asia/Kolkata"
+
+
+def test_dependencies_default_to_the_neutral_profile():
+    assert make_deps().profile == Profile()

@@ -5,6 +5,7 @@ import pytest
 
 from agent import runtime
 from agent.digest_config import DEFAULT_CONFIG
+from agent.profile import Profile
 from agent.runtime import build_dependencies
 from agent.schemas import Category
 
@@ -76,6 +77,19 @@ def test_a_digest_toml_in_the_app_folder_is_used(google, tmp_path):
     )
     deps = build_dependencies(ENV, root=tmp_path)
     assert [s.title for s in deps.config.sections] == ["Only"]
+
+
+def test_a_profile_toml_in_the_app_folder_is_used(google, tmp_path):
+    (tmp_path / "profile.toml").write_text(
+        'timezone = "Asia/Kolkata"\n[learn_from_folders]\n"Reading list" = "newsletters"\n'
+    )
+    deps = build_dependencies(ENV, root=tmp_path)
+    assert deps.profile.timezone == "Asia/Kolkata"
+    assert deps.profile.learn_from_folders == {"Reading list": Category.NEWSLETTERS}
+
+
+def test_without_a_profile_file_the_neutral_profile_is_used(google, tmp_path):
+    assert build_dependencies(ENV, root=tmp_path).profile == Profile()
 
 
 def test_a_missing_azure_setting_fails_fast_before_any_google_call(

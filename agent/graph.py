@@ -18,6 +18,7 @@ from agent.nodes.classify import BATCH_SIZE, DEFAULT_CONCURRENCY, classify_many
 from agent.nodes.extract import extract_bill
 from agent.nodes.prefilter import prefilter
 from agent.nodes.transactions import Transaction, extract_transactions
+from agent.profile import Profile
 from agent.schemas import Bill, Category, Classification, Email, Proposal
 
 BILLING = {Category.BILLS, Category.RECEIPTS}
@@ -48,7 +49,10 @@ def build_graph(
     batch_size: int = BATCH_SIZE,
     since: datetime | None = None,
     trust_agent_labels: bool = True,
+    profile: Profile | None = None,
 ):
+    profile = profile or Profile()
+
     def fetch_node(state: AgentState) -> dict:
         ids_by_name = gmail.label_ids_by_name()
         user_label_ids = set(ids_by_name.values())
@@ -83,7 +87,9 @@ def build_graph(
                     for label_id in email.label_ids
                     if label_id in state["label_names_by_id"]
                 ]
-                category = category_for_labels(names, trust_agent_labels)
+                category = category_for_labels(
+                    names, trust_agent_labels, profile.learn_from_folders
+                )
                 if category is not None:
                     decided[email.id] = Classification(
                         category=category,
@@ -125,7 +131,9 @@ def build_graph(
                     sender=email.sender,
                     subject=email.subject,
                     category=c.category,
-                    label=resolve_label(c.category, state["existing_labels"]),
+                    label=resolve_label(
+                        c.category, state["existing_labels"], profile.file_into
+                    ),
                     confidence=c.confidence,
                     reason=c.reason,
                     source=c.source,

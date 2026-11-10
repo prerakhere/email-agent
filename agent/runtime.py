@@ -3,8 +3,8 @@
 Used by the Azure Function; the local scripts build their own pieces the same way. The Azure OpenAI
 settings are checked first so a mistake fails fast, before any call to Google.
 
-Files read from the app folder (all optional): rules.json (learned sender rules) and digest.toml
-(the digest layout). They are deployed alongside the code but are NOT in git.
+Files read from the app folder (all optional): rules.json (learned sender rules), digest.toml
+(the digest layout) and profile.toml (personal taste). They are deployed alongside the code but are NOT in git.
 """
 
 from collections.abc import Mapping
@@ -21,6 +21,7 @@ from agent.nodes.classify import build_classifier
 from agent.nodes.extract import build_extractor
 from agent.nodes.summarize import build_group_summarizer, build_summarizer
 from agent.nodes.transactions import build_transaction_extractor
+from agent.profile import load_profile
 from agent.rules import load_rules
 from agent.sheets_client import SheetsClient
 
@@ -47,6 +48,7 @@ def build_dependencies(env: Mapping[str, str], root: Path = APP_ROOT) -> Depende
         sheets=sheets,
         rules=load_rules(root / "rules.json"),
         config=load_digest_config(root / "digest.toml"),
+        profile=load_profile(root / "profile.toml"),
         classifier=build_classifier(llm),
         extractor=build_extractor(llm),
         summarizer=build_summarizer(llm),

@@ -9,7 +9,7 @@ A wrong rule silently misfiles mail with no LLM check, so learning is deliberate
 
 import json
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from email.utils import parseaddr
 from pathlib import Path
 
@@ -32,24 +32,17 @@ SHARED_DOMAINS = {
 }
 
 
-# The user's existing folders that reliably imply a category. A folder also covers everything
-# nested under it. Anything not listed (Finances/Bank, Tax, Insurance, Travel, ...) is skipped
-# until we know what category it should teach.
-FOLDER_CATEGORIES: dict[str, Category] = {
-    "Newsletters": Category.NEWSLETTERS,
-    "To Go Through": Category.NEWSLETTERS,
-    "Finances/Statements, Receipts": Category.BILLS,
-    "Finances/Statements, Receipts/Donations": Category.RECEIPTS,  # more specific than its parent
-    "Finances/subscriptions": Category.BILLS,
-}
-
-
-def labels_to_categories(label_names: Iterable[str]) -> dict[str, Category]:
+def labels_to_categories(
+    label_names: Iterable[str], folders: Mapping[str, Category]
+) -> dict[str, Category]:
     """Which of the user's labels teach a category: the folder itself or anything under it.
 
-    When several mapped folders contain a label, the most specific (longest) one wins.
+    `folders` is the profile's learn_from_folders: the user's own folders that reliably imply a
+    category. A folder also covers everything nested under it; a label under no listed folder
+    teaches nothing. When several mapped folders contain a label, the most specific (longest)
+    one wins.
     """
-    folders = {name.lower(): category for name, category in FOLDER_CATEGORIES.items()}
+    folders = {name.lower(): category for name, category in folders.items()}
     result: dict[str, Category] = {}
     for name in label_names:
         lowered = name.lower()

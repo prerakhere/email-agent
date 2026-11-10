@@ -17,6 +17,7 @@ from googleapiclient.discovery import build
 from phase0_check import get_credentials
 
 from agent.gmail_client import GmailClient
+from agent.profile import load_profile
 from agent.rules import labels_to_categories, learn_rules, save_rules
 
 RULES_PATH = ROOT / "rules.json"
@@ -30,9 +31,13 @@ def main() -> None:
 
     gmail = GmailClient(build("gmail", "v1", credentials=get_credentials()))
     label_ids = gmail.label_ids_by_name()
-    mapping = labels_to_categories(label_ids)
+    profile = load_profile(ROOT / "profile.toml")
+    mapping = labels_to_categories(label_ids, profile.learn_from_folders)
     if not mapping:
-        sys.exit("None of your labels match the folder mapping in agent/rules.py.")
+        sys.exit(
+            "None of your labels match learn_from_folders in profile.toml "
+            "(copy profile.example.toml to start)."
+        )
 
     samples = []
     for name, category in sorted(mapping.items()):
