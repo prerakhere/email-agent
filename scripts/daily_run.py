@@ -67,6 +67,7 @@ def main() -> None:
     creds = get_credentials()
     llm = build_llm()
     gmail = GmailClient(build("gmail", "v1", credentials=creds))
+    profile = load_profile(PROFILE_PATH)
     sheet_id = os.environ.get("SHEET_ID", "")
     sheets = (
         SheetsClient(build("sheets", "v4", credentials=creds), sheet_id)
@@ -79,7 +80,7 @@ def main() -> None:
         gmail,
         load_rules(RULES_PATH),
         load_digest_config(CONFIG_PATH),
-        build_classifier(llm),
+        build_classifier(llm, profile),
         build_extractor(llm),
         build_summarizer(llm),
         build_group_summarizer(llm),
@@ -88,7 +89,7 @@ def main() -> None:
         keep_in_inbox=keep_in_inbox,
         max_results=args.max_results,
         transaction_extractor=build_transaction_extractor(llm),
-        profile=load_profile(PROFILE_PATH),
+        profile=profile,
     )
     args.preview.write_text(plan.rendered.html)
 

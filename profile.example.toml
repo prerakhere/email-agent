@@ -6,9 +6,11 @@ timezone = "Europe/London"
 
 # What you care about, one short line each (at most 20 lines, 300 characters each).
 # These are added to the instructions the classifier follows.
+# Without any, the agent uses neutral defaults (for example, delivery updates are notifications).
 preferences = [
-  "Delivery and shipping updates are noise to me.",
-  "Festival greetings and donation appeals are promotions.",
+  "Delivery and shipping updates matter to me: treat them as important, not notifications.",
+  "I run a small shop: order confirmations from customers are important, not receipts.",
+  "Webinar invitations from lists I follow are newsletters, not notifications.",
 ]
 
 # Currency code -> symbol. Add the ones you use; others are shown by their code.

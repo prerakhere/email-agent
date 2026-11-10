@@ -43,13 +43,14 @@ def build_dependencies(env: Mapping[str, str], root: Path = APP_ROOT) -> Depende
         if sheet_id
         else None
     )
+    profile = load_profile(root / "profile.toml")
     return Dependencies(
         gmail=gmail,
         sheets=sheets,
         rules=load_rules(root / "rules.json"),
         config=load_digest_config(root / "digest.toml"),
-        profile=load_profile(root / "profile.toml"),
-        classifier=build_classifier(llm),
+        profile=profile,
+        classifier=build_classifier(llm, profile),
         extractor=build_extractor(llm),
         summarizer=build_summarizer(llm),
         group_summarizer=build_group_summarizer(llm),

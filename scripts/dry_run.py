@@ -69,13 +69,14 @@ def main() -> None:
 
     llm = build_llm()
     gmail = GmailClient(build("gmail", "v1", credentials=get_credentials()))
+    profile = load_profile(ROOT / "profile.toml")
     graph = build_graph(
         gmail,
         rules,
-        build_classifier(llm),
+        build_classifier(llm, profile),
         days=args.days,
         max_results=args.max_results,
-        profile=load_profile(ROOT / "profile.toml"),
+        profile=profile,
     )
 
     print("DRY RUN: reading Gmail only, nothing will be changed.\n")

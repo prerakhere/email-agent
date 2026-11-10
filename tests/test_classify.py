@@ -14,8 +14,10 @@ from agent.nodes.classify import (
     LLMBatch,
     LLMItem,
     build_classifier,
+    classifier_prompt,
     classify_many,
 )
+from agent.profile import Profile
 from agent.schemas import Category, Email
 
 
@@ -402,3 +404,70 @@ def test_a_periodic_account_statement_with_nothing_to_pay_is_a_statement():
 def test_a_statement_that_shows_an_amount_due_is_still_a_bill():
     text = SYSTEM_PROMPT.lower()
     assert "amount due and a due date is a bill" in text
+
+
+# ---- the owner's preferences: a block built from the profile, absent without one ----
+
+
+
+
+def system_text(profile=None) -> str:
+    return classifier_prompt(profile).format_messages(emails="x")[0].content
+
+
+def test_without_a_profile_there_is_no_preferences_block():
+    text = system_text()
+    assert "owner's preferences" not in text.lower()
+    assert (
+        "{preferences}" not in text
+    )  # the slot is filled, never left as a placeholder
+
+
+def test_profile_preferences_are_listed_under_a_heading_before_the_safety_rules():
+    profile = Profile(
+        preferences=["Delivery updates are important to me.", "Greetings are noise."]
+    )
+    text = system_text(profile)
+    lowered = text.lower()
+    assert "owner's preferences" in lowered
+    assert "- Delivery updates are important to me." in text
+    assert "- Greetings are noise." in text
+    # settles borderline cases only, and comes after the category guidance but before the
+    # untrusted-text rule, which must stay the last word
+    assert lowered.index("- bills:") < lowered.index("owner's preferences")
+    assert lowered.index("owner's preferences") < lowered.index("untrusted")
+    assert "borderline" in lowered
+
+
+def test_a_preference_containing_braces_cannot_break_the_prompt():
+    profile = Profile(preferences=["Treat {anything} from {my boss} as important."])
+    text = system_text(profile)
+    assert "Treat {anything} from {my boss} as important." in text
+
+
+def test_the_core_guidance_still_appears_with_a_profile():
+    text = system_text(Profile(preferences=["x"])).lower()
+    assert "- statements:" in text and "never important" in text
+
+
+def test_the_chain_built_with_a_profile_sends_the_preferences_to_the_model():
+    captured = {}
+
+    def fake_structured(prompt_value):
+        captured["text"] = prompt_value.to_string()
+        return LLMBatch(items=[item(1, Category.PROMOTIONS)])
+
+    def with_structured_output(schema):
+        return RunnableLambda(fake_structured)
+
+    llm = SimpleNamespace(with_structured_output=with_structured_output)
+    chain = build_classifier(llm, Profile(preferences=["Webinars matter to me."]))
+    classify_many([make_email()], chain)
+    assert "Webinars matter to me." in captured["text"]
+    assert "deals@shop.com" in captured["text"]  # the email still follows
+
+
+def test_the_core_prompt_describes_greetings_neutrally_not_as_the_owners_opinion():
+    # A greeting from a company or app is a promotion; one written personally is important.
+    text = SYSTEM_PROMPT.lower()
+    assert "greetings" in text and "written personally" in text

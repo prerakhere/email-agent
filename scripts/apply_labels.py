@@ -74,14 +74,15 @@ def main() -> None:
     llm = build_llm()
     creds = get_credentials()
     gmail = GmailClient(build("gmail", "v1", credentials=creds))
+    profile = load_profile(ROOT / "profile.toml")
     graph = build_graph(
         gmail,
         load_rules(RULES_PATH),
-        build_classifier(llm),
+        build_classifier(llm, profile),
         days=args.days,
         max_results=args.max_results,
         extractor=build_extractor(llm),
-        profile=load_profile(ROOT / "profile.toml"),
+        profile=profile,
     )
     state = graph.invoke({}, config={"tags": ["apply"], "metadata": {"phase": 4}})
     print(format_table(state["proposals"]))

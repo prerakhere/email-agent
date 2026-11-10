@@ -63,6 +63,7 @@ def main() -> None:
 
     llm = build_llm()
     gmail = GmailClient(build("gmail", "v1", credentials=get_credentials()))
+    profile = load_profile(PROFILE_PATH)
     until = datetime.now(UTC)
     since = until - timedelta(hours=args.hours)
 
@@ -70,7 +71,7 @@ def main() -> None:
         gmail,
         load_rules(RULES_PATH),
         load_digest_config(CONFIG_PATH),
-        build_classifier(llm),
+        build_classifier(llm, profile),
         build_summarizer(llm),
         build_group_summarizer(llm),
         since=since,
@@ -78,7 +79,7 @@ def main() -> None:
         max_results=args.max_results,
         extractor=build_extractor(llm),
         transaction_extractor=build_transaction_extractor(llm),
-        profile=load_profile(PROFILE_PATH),
+        profile=profile,
     )
     args.preview.write_text(rendered.html)
 
