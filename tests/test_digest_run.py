@@ -101,7 +101,7 @@ def test_mail_from_the_window_ends_up_in_the_right_sections_of_the_email():
     content, rendered, _ = make_digest(emails)
     assert [s.title for s in content.sections] == [
         "Important",
-        "Job alerts",
+        "Job Alerts",
         "Newsletters",
     ]
     assert "Summary of Interview next week." in rendered.html

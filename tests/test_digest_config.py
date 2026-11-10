@@ -24,7 +24,7 @@ def test_the_defaults_cover_the_sections_the_digest_needs_in_order():
     assert titles == [
         "Important",
         "Bills and payments",
-        "Job alerts",
+        "Job Alerts",
         "Newsletters",
         "Promotions",
         "Notifications",

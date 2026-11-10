@@ -102,7 +102,7 @@ DEFAULT_CONFIG = DigestConfig(
             max_items=30,  # a busy day has many small payments
         ),
         DigestSection(
-            title="Job alerts",
+            title="Job Alerts",
             categories=[Category.JOB_ALERTS],
             style="One line: the count and the most relevant roles (title and company).",
             mode="group",
