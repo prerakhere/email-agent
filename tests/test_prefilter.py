@@ -7,47 +7,47 @@ def make_email(sender: str, **kwargs) -> Email:
 
 
 RULES = {
-    "alerts@hdfcbank.net": Category.BILLS,
-    "hdfcbank.net": Category.NOTIFICATIONS,
-    "bytebytego.com": Category.NEWSLETTERS,
+    "alerts@examplebank.net": Category.BILLS,
+    "examplebank.net": Category.NOTIFICATIONS,
+    "weeklytech.example": Category.NEWSLETTERS,
 }
 
 
 def test_exact_address_rule_matches_with_full_confidence():
-    result = prefilter(make_email("HDFC <alerts@hdfcbank.net>"), RULES)
+    result = prefilter(make_email("Example <alerts@examplebank.net>"), RULES)
     assert result is not None
     assert result.category == Category.BILLS
     assert result.confidence == 1.0
     assert result.source == "rule"
-    assert "alerts@hdfcbank.net" in result.reason
+    assert "alerts@examplebank.net" in result.reason
 
 
 def test_address_rule_beats_domain_rule():
-    # hdfcbank.net is NOTIFICATIONS, but this exact address is BILLS.
-    result = prefilter(make_email("alerts@hdfcbank.net"), RULES)
+    # examplebank.net is NOTIFICATIONS, but this exact address is BILLS.
+    result = prefilter(make_email("alerts@examplebank.net"), RULES)
     assert result.category == Category.BILLS
 
 
 def test_domain_rule_matches_with_slightly_lower_confidence():
-    result = prefilter(make_email("news@bytebytego.com"), RULES)
+    result = prefilter(make_email("news@weeklytech.example"), RULES)
     assert result.category == Category.NEWSLETTERS
     assert result.confidence == 0.95
     assert result.source == "rule"
 
 
 def test_subdomain_matches_parent_domain_rule():
-    result = prefilter(make_email("hi@mail.bytebytego.com"), RULES)
+    result = prefilter(make_email("hi@mail.weeklytech.example"), RULES)
     assert result.category == Category.NEWSLETTERS
 
 
 def test_lookalike_domain_does_not_match():
-    # "notbytebytego.com" must not match the "bytebytego.com" rule.
-    assert prefilter(make_email("x@notbytebytego.com"), RULES) is None
+    # "notweeklytech.example" must not match the "weeklytech.example" rule.
+    assert prefilter(make_email("x@notweeklytech.example"), RULES) is None
 
 
 def test_matching_ignores_case_in_rules_and_sender():
     result = prefilter(
-        make_email("X@BYTEBYTEGO.COM"), {"ByteByteGo.com": Category.NEWSLETTERS}
+        make_email("X@WEEKLYTECH.EXAMPLE"), {"WeeklyTech.example": Category.NEWSLETTERS}
     )
     assert result.category == Category.NEWSLETTERS
 

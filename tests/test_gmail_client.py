@@ -169,22 +169,22 @@ def test_list_label_names_returns_only_user_labels_sorted():
     labels = [
         {"name": "INBOX", "type": "system"},
         {"name": "Newsletters", "type": "user"},
-        {"name": "Finances", "type": "user"},
+        {"name": "Money", "type": "user"},
     ]
     service = fake_service([], {}, labels=labels)
-    assert GmailClient(service).list_label_names() == ["Finances", "Newsletters"]
+    assert GmailClient(service).list_label_names() == ["Money", "Newsletters"]
 
 
 def test_label_ids_by_name_maps_user_labels_only():
     labels = [
         {"id": "INBOX", "name": "INBOX", "type": "system"},
         {"id": "Label_1", "name": "Newsletters", "type": "user"},
-        {"id": "Label_2", "name": "Finances/Bank", "type": "user"},
+        {"id": "Label_2", "name": "Money/Bank", "type": "user"},
     ]
     service = fake_service([], {}, labels=labels)
     assert GmailClient(service).label_ids_by_name() == {
         "Newsletters": "Label_1",
-        "Finances/Bank": "Label_2",
+        "Money/Bank": "Label_2",
     }
 
 

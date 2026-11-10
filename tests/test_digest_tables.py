@@ -30,7 +30,9 @@ def classify(pairs):
     }
 
 
-def bill(vendor="HDFC Bank", amount="5633.00", due=date(2026, 11, 9), currency="INR"):
+def bill(
+    vendor="Example Bank", amount="5633.00", due=date(2026, 11, 9), currency="INR"
+):
     return Bill(
         vendor=vendor,
         amount=Decimal(amount),
@@ -88,7 +90,7 @@ def run(pairs, config, bills=None, transactions=None, now=NOW):
 def test_a_bills_table_has_a_row_per_extracted_bill_and_no_model_call():
     pairs = [(email("1"), Category.BILLS), (email("2"), Category.RECEIPTS)]
     bills = {
-        "1": bill("HDFC Bank", "5633.00", date(2026, 11, 9)),
+        "1": bill("Example Bank", "5633.00", date(2026, 11, 9)),
         "2": bill("Amazon.in", "85004.00", None),
     }
     section = run(pairs, BILLS_CONFIG, bills=bills).sections[0]
@@ -96,7 +98,7 @@ def test_a_bills_table_has_a_row_per_extracted_bill_and_no_model_call():
     table = section.table
     assert table.columns == ["Type", "Biller", "Amount", "Due"]
     assert [r.cells for r in table.rows] == [
-        ["bill", "HDFC Bank", "₹5,633.00", "tomorrow"],
+        ["bill", "Example Bank", "₹5,633.00", "tomorrow"],
         ["receipt", "Amazon.in", "₹85,004.00", "-"],
     ]
 
@@ -237,14 +239,14 @@ def test_a_currency_with_no_symbol_keeps_its_code():
 
 def repeated_bills(n=4):
     pairs = [(email(str(i)), Category.BILLS) for i in range(n)]
-    found = {str(i): bill("Furlenco", "496.19", date(2026, 11, 20)) for i in range(n)}
+    found = {str(i): bill("Rentco", "496.19", date(2026, 11, 20)) for i in range(n)}
     return run(pairs, BILLS_CONFIG, bills=found).sections[0]
 
 
 def test_identical_bills_collapse_to_one_row_marked_with_how_many():
     table = repeated_bills().table
     assert len(table.rows) == 1
-    assert table.rows[0].cells[1] == "Furlenco ×4"
+    assert table.rows[0].cells[1] == "Rentco ×4"
     assert table.rows[0].email_id == "0"  # links to the newest of them
 
 
@@ -257,9 +259,9 @@ def test_identical_bills_are_counted_once_in_the_total_but_the_section_still_cou
 def test_bills_that_differ_in_amount_or_due_date_stay_separate():
     pairs = [(email(str(i)), Category.BILLS) for i in range(3)]
     found = {
-        "0": bill("Furlenco", "496.19", date(2026, 11, 20)),
-        "1": bill("Furlenco", "496.19", date(2026, 12, 20)),
-        "2": bill("Furlenco", "500.00", date(2026, 11, 20)),
+        "0": bill("Rentco", "496.19", date(2026, 11, 20)),
+        "1": bill("Rentco", "496.19", date(2026, 12, 20)),
+        "2": bill("Rentco", "500.00", date(2026, 11, 20)),
     }
     rows = run(pairs, BILLS_CONFIG, bills=found).sections[0].table.rows
     assert len(rows) == 3
@@ -272,7 +274,7 @@ def payee_cell(payee, via="UPI"):
 
 
 def test_a_masked_upi_handle_loses_its_asterisks_and_bank_suffix():
-    assert payee_cell("*******payu@hdfcbank") == "payu"
+    assert payee_cell("*******payu@examplebank") == "payu"
 
 
 def test_an_unreadable_upi_handle_becomes_upi_payment():
@@ -316,7 +318,7 @@ def test_bills_receipts_and_payments_share_one_table_with_bills_first():
     section = money_section(
         pairs,
         bills={
-            "b1": bill("HDFC Bank", "5633.00", date(2026, 11, 9)),
+            "b1": bill("Example Bank", "5633.00", date(2026, 11, 9)),
             "r1": bill("Amazon.in", "85004.00", None),
         },
         transactions={
@@ -327,7 +329,7 @@ def test_bills_receipts_and_payments_share_one_table_with_bills_first():
     table = section.table
     assert table.columns == ["What", "Who", "Amount", "When"] and table.link_column == 1
     assert [r.cells for r in table.rows] == [
-        ["bill", "HDFC Bank", "₹5,633.00", "tomorrow"],
+        ["bill", "Example Bank", "₹5,633.00", "tomorrow"],
         ["receipt", "Amazon.in", "₹85,004.00", "-"],
         ["spent", "Cafe Blue", "₹450.00", "UPI"],
         ["received", "-", "+₹200.00", "credit card"],
@@ -401,9 +403,9 @@ def test_money_rows_beyond_the_limit_are_counted_and_the_totals_cover_them_all()
 
 def test_repeated_identical_bills_still_collapse_in_the_money_table():
     pairs = [(email(str(i)), Category.BILLS) for i in range(3)]
-    found = {str(i): bill("Furlenco", "496.19", date(2026, 11, 20)) for i in range(3)}
+    found = {str(i): bill("Rentco", "496.19", date(2026, 11, 20)) for i in range(3)}
     table = money_section(pairs, bills=found).table
-    assert len(table.rows) == 1 and table.rows[0].cells[1] == "Furlenco ×3"
+    assert len(table.rows) == 1 and table.rows[0].cells[1] == "Rentco ×3"
     assert "1 bill: ₹496.19" in table.summary
 
 

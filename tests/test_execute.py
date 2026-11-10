@@ -20,13 +20,13 @@ def make_state(with_bill=True):
         sender=email.sender,
         subject=email.subject,
         category=Category.BILLS,
-        label="Finances/Statements, Receipts",
+        label="Money/Statements, Receipts",
         confidence=0.9,
         reason="r",
         source="llm",
     )
     bill = Bill(
-        vendor="HDFC Bank",
+        vendor="Example Bank",
         amount=Decimal("5633.00"),
         currency="INR",
         due_date=date(2026, 11, 9),

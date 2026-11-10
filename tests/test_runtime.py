@@ -59,9 +59,9 @@ def test_without_a_sheet_id_there_is_no_sheets_client(google, tmp_path):
 
 
 def test_learned_rules_are_read_from_the_app_folder(google, tmp_path):
-    (tmp_path / "rules.json").write_text(json.dumps({"naukri.com": "job_alerts"}))
+    (tmp_path / "rules.json").write_text(json.dumps({"jobsite.example": "job_alerts"}))
     deps = build_dependencies(ENV, root=tmp_path)
-    assert deps.rules == {"naukri.com": Category.JOB_ALERTS}
+    assert deps.rules == {"jobsite.example": Category.JOB_ALERTS}
 
 
 def test_missing_rules_and_digest_files_mean_no_rules_and_the_default_digest(

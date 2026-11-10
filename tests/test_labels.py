@@ -6,15 +6,15 @@ from agent.schemas import Category
 # A person's profile: folders that teach a category, and existing labels to file into.
 FOLDERS = {
     "Newsletters": Category.NEWSLETTERS,
-    "To Go Through": Category.NEWSLETTERS,
-    "Finances/Statements, Receipts": Category.BILLS,
-    "Finances/Statements, Receipts/Donations": Category.RECEIPTS,
-    "Finances/subscriptions": Category.BILLS,
+    "Read Later": Category.NEWSLETTERS,
+    "Money/Statements, Receipts": Category.BILLS,
+    "Money/Statements, Receipts/Donations": Category.RECEIPTS,
+    "Money/subscriptions": Category.BILLS,
 }
 FILE_INTO = {
-    Category.BILLS: ["Finances/Statements, Receipts"],
-    Category.RECEIPTS: ["Finances/Statements, Receipts"],
-    Category.STATEMENTS: ["Finances/Statements, Receipts"],
+    Category.BILLS: ["Money/Statements, Receipts"],
+    Category.RECEIPTS: ["Money/Statements, Receipts"],
+    Category.STATEMENTS: ["Money/Statements, Receipts"],
     Category.NEWSLETTERS: ["Newsletters"],
 }
 
@@ -29,22 +29,22 @@ def read(names, **kwargs):
 
 # Subset of the real label tree (see scripts/list_labels.py).
 REAL_LABELS = {
-    "Finances",
-    "Finances/Statements, Receipts",
-    "Finances/subscriptions",
+    "Money",
+    "Money/Statements, Receipts",
+    "Money/subscriptions",
     "Newsletters",
-    "Job Applications",
-    "To Go Through",
-    "To Go Through/bytebytego",
+    "Travel Plans",
+    "Read Later",
+    "Read Later/weeklytech",
 }
 
 
 def test_bills_go_to_existing_statements_label():
-    assert resolve(Category.BILLS, REAL_LABELS) == "Finances/Statements, Receipts"
+    assert resolve(Category.BILLS, REAL_LABELS) == "Money/Statements, Receipts"
 
 
 def test_receipts_go_to_existing_statements_label():
-    assert resolve(Category.RECEIPTS, REAL_LABELS) == "Finances/Statements, Receipts"
+    assert resolve(Category.RECEIPTS, REAL_LABELS) == "Money/Statements, Receipts"
 
 
 def test_newsletters_go_to_existing_newsletters_label():
@@ -52,7 +52,7 @@ def test_newsletters_go_to_existing_newsletters_label():
 
 
 def test_job_alerts_never_go_into_job_applications():
-    # "Job Applications" is for applications you made, not recruiter/alert mail.
+    # "Travel Plans" is for applications you made, not recruiter/alert mail.
     assert resolve(Category.JOB_ALERTS, REAL_LABELS) == "Agent/Job-Alerts"
 
 
@@ -94,9 +94,9 @@ def test_every_agent_label_maps_back_to_its_category(category):
 
 def test_the_users_own_folders_map_to_a_category():
     assert read(["Newsletters"]) == Category.NEWSLETTERS
-    assert read(["To Go Through/bytebytego"]) == Category.NEWSLETTERS
-    assert read(["Finances/Statements, Receipts"]) == Category.BILLS
-    donations = ["Finances/Statements, Receipts/Donations"]
+    assert read(["Read Later/weeklytech"]) == Category.NEWSLETTERS
+    assert read(["Money/Statements, Receipts"]) == Category.BILLS
+    donations = ["Money/Statements, Receipts/Donations"]
     assert read(donations) == Category.RECEIPTS  # most specific folder wins
 
 
@@ -110,7 +110,7 @@ def test_an_agent_label_wins_over_one_of_the_users_folders():
 
 
 def test_labels_that_say_nothing_about_a_category_give_none():
-    assert read(["Job Applications", "Random"]) is None
+    assert read(["Travel Plans", "Random"]) is None
     assert read([]) is None
 
 
@@ -133,7 +133,7 @@ def test_agent_labels_can_be_ignored_while_the_users_own_folders_still_count():
 def test_a_statement_goes_to_the_users_statements_folder_when_it_exists():
     from agent.schemas import Category
 
-    existing = ["Finances/Statements, Receipts"]
+    existing = ["Money/Statements, Receipts"]
     assert resolve(Category.STATEMENTS, existing) == existing[0]
 
 
@@ -148,7 +148,7 @@ def test_a_statement_falls_back_to_an_agent_label_and_reads_back_from_it():
 
 
 def test_with_no_profile_every_category_uses_its_agent_label():
-    real = {"Finances/Statements, Receipts", "Newsletters"}
+    real = {"Money/Statements, Receipts", "Newsletters"}
     assert resolve_label(Category.BILLS, real) == "Agent/Bills"
     assert resolve_label(Category.NEWSLETTERS, real) == "Agent/Newsletters"
 

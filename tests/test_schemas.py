@@ -11,7 +11,7 @@ def make_email(**overrides):
     data = {
         "id": "m1",
         "thread_id": "t1",
-        "sender": "ByteByteGo <hello@bytebytego.com>",
+        "sender": "WeeklyTech <hello@weeklytech.example>",
         "subject": "EP100: Caching",
         "body_preview": "This week we look at caching...",
     }
@@ -20,12 +20,12 @@ def make_email(**overrides):
 
 
 def test_email_sender_address_is_extracted_and_lowercased():
-    assert make_email().sender_address == "hello@bytebytego.com"
+    assert make_email().sender_address == "hello@weeklytech.example"
     assert make_email(sender="PLAIN@Example.COM").sender_address == "plain@example.com"
 
 
 def test_email_sender_domain():
-    assert make_email().sender_domain == "bytebytego.com"
+    assert make_email().sender_domain == "weeklytech.example"
 
 
 def test_email_flags_from_label_ids():
@@ -74,7 +74,7 @@ def test_category_values_cover_plan():
 
 def test_bill_amount_is_decimal_and_positive():
     b = Bill(
-        vendor="HDFC Credit Card",
+        vendor="Example Credit Card",
         amount="1234.50",
         currency="INR",
         due_date=date(2026, 11, 20),

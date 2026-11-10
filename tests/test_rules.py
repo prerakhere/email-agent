@@ -4,10 +4,10 @@ from agent.schemas import Category
 # A person's folders that teach a category (what a profile's learn_from_folders holds).
 FOLDERS = {
     "Newsletters": Category.NEWSLETTERS,
-    "To Go Through": Category.NEWSLETTERS,
-    "Finances/Statements, Receipts": Category.BILLS,
-    "Finances/Statements, Receipts/Donations": Category.RECEIPTS,
-    "Finances/subscriptions": Category.BILLS,
+    "Read Later": Category.NEWSLETTERS,
+    "Money/Statements, Receipts": Category.BILLS,
+    "Money/Statements, Receipts/Donations": Category.RECEIPTS,
+    "Money/subscriptions": Category.BILLS,
 }
 
 
@@ -20,12 +20,12 @@ def samples(sender: str, category: Category, n: int) -> list[tuple[str, Category
 
 
 def test_consistent_sender_becomes_an_address_rule():
-    rules = learn_rules(samples("alerts@hdfcbank.net", Category.BILLS, 3))
-    assert rules == {"alerts@hdfcbank.net": Category.BILLS}
+    rules = learn_rules(samples("alerts@examplebank.net", Category.BILLS, 3))
+    assert rules == {"alerts@examplebank.net": Category.BILLS}
 
 
 def test_sender_with_too_few_messages_is_not_learned():
-    assert learn_rules(samples("alerts@hdfcbank.net", Category.BILLS, 1)) == {}
+    assert learn_rules(samples("alerts@examplebank.net", Category.BILLS, 1)) == {}
 
 
 def test_minimum_message_count_is_configurable():
@@ -125,29 +125,29 @@ def test_mapped_folders_and_their_sublabels_get_a_category():
     result = categories(
         [
             "Newsletters",
-            "To Go Through",
-            "To Go Through/bytebytego",
-            "Finances/Statements, Receipts",
-            "Finances/Statements, Receipts/cards/credit cards/CC Statements",
-            "Finances/subscriptions",
+            "Read Later",
+            "Read Later/weeklytech",
+            "Money/Statements, Receipts",
+            "Money/Statements, Receipts/cards/credit cards/CC Statements",
+            "Money/subscriptions",
         ]
     )
     assert result == {
         "Newsletters": Category.NEWSLETTERS,
-        "To Go Through": Category.NEWSLETTERS,
-        "To Go Through/bytebytego": Category.NEWSLETTERS,
-        "Finances/Statements, Receipts": Category.BILLS,
-        "Finances/Statements, Receipts/cards/credit cards/CC Statements": Category.BILLS,
-        "Finances/subscriptions": Category.BILLS,
+        "Read Later": Category.NEWSLETTERS,
+        "Read Later/weeklytech": Category.NEWSLETTERS,
+        "Money/Statements, Receipts": Category.BILLS,
+        "Money/Statements, Receipts/cards/credit cards/CC Statements": Category.BILLS,
+        "Money/subscriptions": Category.BILLS,
     }
 
 
 def test_unmapped_labels_are_left_out():
     labels = [
-        "Finances",
-        "Finances/Bank",
-        "Finances/Tax",
-        "Job Applications",
+        "Money",
+        "Money/Bank",
+        "Money/Tax",
+        "Travel Plans",
         "Travel.",
     ]
     assert categories(labels) == {}
@@ -155,14 +155,14 @@ def test_unmapped_labels_are_left_out():
 
 def test_lookalike_label_names_do_not_match():
     # "Newsletters-old" is not underneath "Newsletters".
-    assert categories(["Newsletters-old", "To Go Through2"]) == {}
+    assert categories(["Newsletters-old", "Read Later2"]) == {}
 
 
 def test_label_matching_ignores_case():
-    result = categories(["newsletters", "TO GO THROUGH/Medium"])
+    result = categories(["newsletters", "READ LATER/Medium"])
     assert result == {
         "newsletters": Category.NEWSLETTERS,
-        "TO GO THROUGH/Medium": Category.NEWSLETTERS,
+        "READ LATER/Medium": Category.NEWSLETTERS,
     }
 
 
@@ -173,23 +173,21 @@ def test_no_labels_gives_empty_mapping():
 def test_most_specific_folder_wins_over_its_parent():
     result = categories(
         [
-            "Finances/Statements, Receipts",
-            "Finances/Statements, Receipts/Donations",
-            "Finances/Statements, Receipts/Donations/2025",
-            "Finances/Statements, Receipts/AWS Bills",
-            "Finances/Statements, Receipts/Loan, EMI",
+            "Money/Statements, Receipts",
+            "Money/Statements, Receipts/Donations",
+            "Money/Statements, Receipts/Donations/2025",
+            "Money/Statements, Receipts/AWS Bills",
+            "Money/Statements, Receipts/Loan, EMI",
         ]
     )
     assert result == {
-        "Finances/Statements, Receipts": Category.BILLS,
-        "Finances/Statements, Receipts/Donations": Category.RECEIPTS,
-        "Finances/Statements, Receipts/Donations/2025": Category.RECEIPTS,
-        "Finances/Statements, Receipts/AWS Bills": Category.BILLS,
-        "Finances/Statements, Receipts/Loan, EMI": Category.BILLS,
+        "Money/Statements, Receipts": Category.BILLS,
+        "Money/Statements, Receipts/Donations": Category.RECEIPTS,
+        "Money/Statements, Receipts/Donations/2025": Category.RECEIPTS,
+        "Money/Statements, Receipts/AWS Bills": Category.BILLS,
+        "Money/Statements, Receipts/Loan, EMI": Category.BILLS,
     }
 
 
 def test_with_no_folders_configured_no_label_teaches_anything():
-    assert (
-        labels_to_categories(["Newsletters", "Finances/Statements, Receipts"], {}) == {}
-    )
+    assert labels_to_categories(["Newsletters", "Money/Statements, Receipts"], {}) == {}

@@ -97,10 +97,10 @@ def test_apply_report_in_keep_mode_says_label_and_that_mail_stays():
 
 def bill_item(category=Category.BILLS, confidence=0.9, due=date(2026, 12, 5)):
     email = Email(
-        id="m1", thread_id="t1", sender="HDFC <s@hdfc.com>", subject="Statement"
+        id="m1", thread_id="t1", sender="Example <s@bank.example>", subject="Statement"
     )
     bill = Bill(
-        vendor="HDFC Bank",
+        vendor="Example Bank",
         amount=Decimal("12500.50"),
         currency="INR",
         due_date=due,
@@ -111,7 +111,7 @@ def bill_item(category=Category.BILLS, confidence=0.9, due=date(2026, 12, 5)):
 
 def test_bill_plan_shows_each_row_with_amount_due_date_and_status():
     text = format_bill_plan([bill_item()])
-    assert "bill" in text and "HDFC Bank" in text
+    assert "bill" in text and "Example Bank" in text
     assert "12,500.50 INR" in text and "due 2026-12-05" in text and "unpaid" in text
     assert "1 row would be added" in text and "DRY RUN" in text
 

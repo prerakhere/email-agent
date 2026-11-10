@@ -100,7 +100,7 @@ def group_section(summary="Mostly Python roles.", fallback=False, refs=None):
     refs = (
         refs
         if refs is not None
-        else [EmailRef(email_id="g1", sender="Naukri <n@x.com>", subject="5 new jobs")]
+        else [EmailRef(email_id="g1", sender="JobSite <n@x.com>", subject="5 new jobs")]
     )
     return SectionSummary(
         title="Job alerts",
@@ -156,7 +156,7 @@ def table_section(
         else [
             TableRow(
                 email_id="b1",
-                cells=["bill", "HDFC Bank", "INR 5,633.00", "2026-11-09"],
+                cells=["bill", "Example Bank", "INR 5,633.00", "2026-11-09"],
                 highlight=highlight,
             ),
             TableRow(
@@ -186,7 +186,7 @@ def test_a_table_section_renders_a_real_table_with_a_header_and_a_link_per_row()
     assert "<table" in data and data.count("<tr") == 3  # header plus two rows
     for heading in ("Type", "Biller", "Amount", "Due"):
         assert "<th" in html and heading in html
-    assert ">HDFC Bank</a>" in html and "INR 85,004.00</td>" in html
+    assert ">Example Bank</a>" in html and "INR 85,004.00</td>" in html
     assert 'href="https://mail.google.com/mail/u/0/#all/b1"' in html
     assert 'href="https://mail.google.com/mail/u/0/#all/b2"' in html
 
@@ -235,7 +235,7 @@ def test_the_text_version_shows_the_same_table_without_html():
     text = render([table_section(highlight=True)]).text
     assert "Type | Biller | Amount | Due" in text
     assert (
-        "! bill | HDFC Bank | INR 5,633.00 | 2026-11-09" in text
+        "! bill | Example Bank | INR 5,633.00 | 2026-11-09" in text
     )  # '!' marks the highlighted row
     assert "receipt | Amazon.in | INR 85,004.00 | -" in text
     assert "2 bills: INR 7,000.00" in text
@@ -262,7 +262,7 @@ def test_a_sender_with_no_name_falls_back_to_the_address():
 def test_the_biller_name_is_the_link_and_there_is_no_open_column():
     html = render([table_section()]).html
     assert ">open</a>" not in html
-    assert 'href="https://mail.google.com/mail/u/0/#all/b1">HDFC Bank</a>' in html
+    assert 'href="https://mail.google.com/mail/u/0/#all/b1">Example Bank</a>' in html
     assert html.count("<th") == 4
 
 

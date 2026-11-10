@@ -19,7 +19,7 @@ def make_email(mid="m1", received=datetime(2026, 11, 7, 9, 30, tzinfo=UTC)) -> E
     return Email(
         id=mid,
         thread_id=f"t-{mid}",
-        sender="HDFC Bank <statements@hdfcbank.net>",
+        sender="Example Bank <statements@examplebank.net>",
         subject="Statement",
         received_at=received,
     )
@@ -27,7 +27,7 @@ def make_email(mid="m1", received=datetime(2026, 11, 7, 9, 30, tzinfo=UTC)) -> E
 
 def make_bill(**kwargs) -> Bill:
     defaults = {
-        "vendor": "HDFC Bank",
+        "vendor": "Example Bank",
         "amount": Decimal("12500.50"),
         "currency": "INR",
         "due_date": date(2026, 12, 5),
@@ -51,7 +51,7 @@ def test_bill_row_follows_the_agreed_columns():
     assert row == [
         "2026-11-07",
         "bill",
-        "HDFC Bank",
+        "Example Bank",
         12500.5,
         "INR",
         "2026-12-05",
@@ -199,9 +199,9 @@ def test_a_reminder_for_a_bill_already_in_the_sheet_adds_no_row():
 
 def test_the_bill_match_ignores_case_and_surrounding_spaces_in_the_biller():
     service, _ = fake_sheets(
-        header=HEADER, rows=[stored_row("first", vendor="hdfc bank ")]
+        header=HEADER, rows=[stored_row("first", vendor="example bank ")]
     )
-    assert log_one(service, "reminder", vendor="HDFC Bank") == []
+    assert log_one(service, "reminder", vendor="Example Bank") == []
 
 
 def test_a_different_amount_or_due_date_is_a_different_bill():

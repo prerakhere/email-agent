@@ -18,7 +18,7 @@ def make_email(**kwargs) -> Email:
     defaults = {
         "id": "m1",
         "thread_id": "t1",
-        "sender": "HDFC Bank <statements@hdfcbank.net>",
+        "sender": "Example Bank <statements@examplebank.net>",
         "subject": "Your credit card statement",
         "body_preview": "Total amount due Rs 12500.00 by 5 Dec",
     }
@@ -27,7 +27,7 @@ def make_email(**kwargs) -> Email:
 
 def llm_bill(**kwargs) -> LLMBill:
     defaults = {
-        "vendor": "HDFC Bank",
+        "vendor": "Example Bank",
         "amount": 12500.0,
         "currency": "inr",
         "due_date": date(2026, 12, 5),
@@ -51,7 +51,7 @@ def chain_returning(answer: LLMBill):
 def test_answer_becomes_a_bill_with_decimal_amount_and_upper_case_currency():
     bill = extract_bill(make_email(), chain_returning(llm_bill()))
     assert bill is not None
-    assert bill.vendor == "HDFC Bank"
+    assert bill.vendor == "Example Bank"
     assert bill.amount == Decimal("12500.0")
     assert bill.currency == "INR"
     assert bill.due_date == date(2026, 12, 5)
@@ -78,7 +78,7 @@ def test_blank_currency_means_nothing_to_log():
 
 def test_blank_vendor_falls_back_to_the_sender_address():
     bill = extract_bill(make_email(), chain_returning(llm_bill(vendor=" ")))
-    assert bill is not None and bill.vendor == "statements@hdfcbank.net"
+    assert bill is not None and bill.vendor == "statements@examplebank.net"
 
 
 def test_low_confidence_still_returns_the_bill_with_its_confidence():
@@ -103,7 +103,7 @@ def test_the_chain_receives_the_redacted_inputs():
     chain = chain_returning(llm_bill())
     extract_bill(make_email(subject="Pay 123456789012 now"), chain)
     assert "123456789012" not in chain.seen[0]["subject"]
-    assert chain.seen[0]["sender"] == "HDFC Bank <statements@hdfcbank.net>"
+    assert chain.seen[0]["sender"] == "Example Bank <statements@examplebank.net>"
 
 
 def test_extractor_asks_the_model_for_the_llmbill_shape():
@@ -116,4 +116,4 @@ def test_extractor_asks_the_model_for_the_llmbill_shape():
     llm = SimpleNamespace(with_structured_output=with_structured_output)
     chain = build_extractor(llm)
     assert asked == [LLMBill]
-    assert chain.invoke(build_bill_inputs(make_email())).vendor == "HDFC Bank"
+    assert chain.invoke(build_bill_inputs(make_email())).vendor == "Example Bank"

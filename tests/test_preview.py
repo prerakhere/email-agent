@@ -2,7 +2,7 @@ from agent.nodes.classify import build_inputs
 from agent.report import format_sent_preview
 from agent.schemas import Category, Email
 
-RULES = {"bytebytego.com": Category.NEWSLETTERS}
+RULES = {"weeklytech.example": Category.NEWSLETTERS}
 
 
 def make_email(mid="1", sender="Bank <alerts@bank.com>", subject="s", body="") -> Email:
@@ -31,7 +31,7 @@ def test_preview_shows_the_redacted_text_not_the_original():
 
 def test_preview_lists_only_mail_that_would_reach_the_llm():
     emails = [
-        make_email("1", sender="a@bytebytego.com", subject="rule matched"),
+        make_email("1", sender="a@weeklytech.example", subject="rule matched"),
         make_email("2", sender="x@other.com", subject="goes to llm"),
     ]
     preview = format_sent_preview(emails, RULES)
@@ -41,8 +41,8 @@ def test_preview_lists_only_mail_that_would_reach_the_llm():
 
 def test_preview_says_how_many_were_skipped_because_a_rule_matched():
     emails = [
-        make_email("1", sender="a@bytebytego.com"),
-        make_email("2", sender="b@bytebytego.com"),
+        make_email("1", sender="a@weeklytech.example"),
+        make_email("2", sender="b@weeklytech.example"),
         make_email("3", sender="x@other.com"),
     ]
     preview = format_sent_preview(emails, RULES)
@@ -51,7 +51,7 @@ def test_preview_says_how_many_were_skipped_because_a_rule_matched():
 
 
 def test_preview_when_nothing_would_be_sent():
-    preview = format_sent_preview([make_email(sender="a@bytebytego.com")], RULES)
+    preview = format_sent_preview([make_email(sender="a@weeklytech.example")], RULES)
     assert "Nothing would be sent to the LLM" in preview
     assert "1 matched a rule" in preview
 

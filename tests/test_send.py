@@ -27,10 +27,12 @@ def sent_message(service):
 
 
 def test_the_digest_is_sent_to_the_users_own_address_only():
-    service = fake_service("prerak@gmail.com")
+    service = fake_service("owner@example.com")
     GmailClient(service).send_to_self("Subject", "plain", "<p>html</p>")
     message = sent_message(service)
-    assert message["To"] == "prerak@gmail.com" and message["From"] == "prerak@gmail.com"
+    assert (
+        message["To"] == "owner@example.com" and message["From"] == "owner@example.com"
+    )
     assert message["Cc"] is None and message["Bcc"] is None
 
 

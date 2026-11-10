@@ -102,7 +102,7 @@ class Models:
 
     def _extract(self, _request):
         return LLMBill(
-            vendor="HDFC Bank",
+            vendor="Example Bank",
             amount=5633.0,
             currency="INR",
             due_date=date(2026, 11, 9),
@@ -367,7 +367,7 @@ def test_a_transaction_alert_becomes_a_table_row_and_is_never_sent_for_summary()
     assert spend.mode == "table"
     assert ["spent", "Cafe", "₹50.00", "UPI"] in [r.cells for r in spend.table.rows]
     assert "UPI txn alert" not in models.summarized  # a table needs no per-mail summary
-    assert spend.table.rows[0].cells[:2] == ["bill", "HDFC Bank"]  # bills come first
+    assert spend.table.rows[0].cells[:2] == ["bill", "Example Bank"]  # bills come first
 
 
 def test_the_transaction_table_is_in_the_email_that_gets_sent():

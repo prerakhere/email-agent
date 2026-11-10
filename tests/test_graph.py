@@ -63,18 +63,18 @@ class FakeChain:
         )
 
 
-RULES = {"bytebytego.com": Category.NEWSLETTERS}
+RULES = {"weeklytech.example": Category.NEWSLETTERS}
 
 
 # A person's taste: folders that teach a category and existing labels to file into.
 PROFILE = Profile(
     learn_from_folders={
         "Newsletters": Category.NEWSLETTERS,
-        "To Go Through": Category.NEWSLETTERS,
-        "Finances/Statements, Receipts": Category.BILLS,
+        "Read Later": Category.NEWSLETTERS,
+        "Money/Statements, Receipts": Category.BILLS,
     },
     file_into={
-        Category.BILLS: ["Finances/Statements, Receipts"],
+        Category.BILLS: ["Money/Statements, Receipts"],
         Category.NEWSLETTERS: ["Newsletters"],
     },
 )
@@ -89,7 +89,7 @@ def run(emails, chain, rules=RULES, labels=(), label_ids=None, **kwargs):
 
 def test_rule_matched_mail_never_reaches_the_llm():
     chain = FakeChain()
-    state, _ = run([make_email("1", "a@bytebytego.com", "weekly")], chain)
+    state, _ = run([make_email("1", "a@weeklytech.example", "weekly")], chain)
     assert chain.seen_subjects == []
     (proposal,) = state["proposals"]
     assert proposal.category == Category.NEWSLETTERS
@@ -110,7 +110,7 @@ def test_llm_only_sees_the_unmatched_emails_and_order_is_preserved():
     chain = FakeChain()
     emails = [
         make_email("1", "deals@shop.com", "first"),
-        make_email("2", "a@bytebytego.com", "second"),
+        make_email("2", "a@weeklytech.example", "second"),
         make_email("3", "x@other.com", "third"),
     ]
     state, _ = run(emails, chain)
@@ -129,9 +129,9 @@ def test_low_confidence_llm_answer_is_proposed_as_needs_review():
 def test_label_uses_existing_gmail_label_when_present_else_agent_fallback():
     chain = FakeChain()
     with_label, _ = run(
-        [make_email("1", "a@bytebytego.com")], chain, labels=["Newsletters"]
+        [make_email("1", "a@weeklytech.example")], chain, labels=["Newsletters"]
     )
-    without_label, _ = run([make_email("1", "a@bytebytego.com")], chain, labels=[])
+    without_label, _ = run([make_email("1", "a@weeklytech.example")], chain, labels=[])
     assert with_label["proposals"][0].label == "Newsletters"
     assert without_label["proposals"][0].label == "Agent/Newsletters"
 
@@ -207,7 +207,7 @@ class FakeExtractor:
     def __init__(self, amount=1250.0):
         self.seen_subjects: list[str] = []
         self._answer = LLMBill(
-            vendor="HDFC Bank", amount=amount, currency="INR", confidence=0.9
+            vendor="Example Bank", amount=amount, currency="INR", confidence=0.9
         )
         self.runnable = RunnableLambda(self._invoke)
 
@@ -228,7 +228,7 @@ def test_bill_mail_is_extracted_into_state_bills():
         extractor=extractor.runnable,
     )
     assert extractor.seen_subjects == ["Statement"]
-    assert state["bills"]["1"].vendor == "HDFC Bank"
+    assert state["bills"]["1"].vendor == "Example Bank"
     assert str(state["bills"]["1"].amount) == "1250.0"
 
 
@@ -344,7 +344,7 @@ def test_all_unmatched_mail_goes_to_the_model_together_in_order():
     recorder = BatchRecorder()
     emails = [
         make_email("1", "deals@shop.com", "first"),
-        make_email("2", "a@bytebytego.com", "second"),  # decided by a rule
+        make_email("2", "a@weeklytech.example", "second"),  # decided by a rule
         make_email("3", "x@other.com", "third"),
     ]
     state = run_with_recorder(emails, recorder)
@@ -373,7 +373,7 @@ def test_the_batch_size_can_be_set_from_the_graph():
 
 def test_no_model_call_at_all_when_every_mail_is_decided_by_a_rule():
     recorder = BatchRecorder()
-    run_with_recorder([make_email("1", "a@bytebytego.com")], recorder)
+    run_with_recorder([make_email("1", "a@weeklytech.example")], recorder)
     assert recorder.requests == []
 
 
@@ -383,7 +383,7 @@ SINCE = datetime(2026, 11, 7, 2, 30, tzinfo=UTC)
 LABEL_IDS = {
     "Agent/Job-Alerts": "L_jobs",
     "Agent/Promotions": "L_promo",
-    "Job Applications": "L_apps",
+    "Travel Plans": "L_apps",
 }
 
 
@@ -427,7 +427,9 @@ def test_labelled_mail_takes_its_category_from_the_label_with_no_model_call():
 
 def test_a_label_beats_a_sender_rule():
     chain = FakeChain()
-    mail = labelled("1", "L_promo", sender="a@bytebytego.com")  # rule says newsletters
+    mail = labelled(
+        "1", "L_promo", sender="a@weeklytech.example"
+    )  # rule says newsletters
     state, _ = run_window([mail], chain)
     assert state["classifications"]["1"].category == Category.PROMOTIONS
 
@@ -453,7 +455,7 @@ def test_only_mail_without_a_label_gets_a_label_proposal():
 
 def test_window_mode_still_extracts_bills_from_labelled_mail():
     extractor = FakeExtractor()
-    bill_labels = {"Finances/Statements, Receipts": "L_fin"}
+    bill_labels = {"Money/Statements, Receipts": "L_fin"}
     graph = build_graph(
         FakeGmail(
             [labelled("1", "L_fin", subject="Statement")],

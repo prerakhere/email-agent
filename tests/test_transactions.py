@@ -23,7 +23,7 @@ def make_email(
     return Email(
         id=mid,
         thread_id=f"t-{mid}",
-        sender="HDFC Bank <alerts@hdfcbank.bank.in>",
+        sender="Example Bank <alerts@examplebank.bank.in>",
         subject=subject,
         body_preview=body,
     )

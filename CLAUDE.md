@@ -14,7 +14,7 @@ summaries/digest -> deploy -> backfill -> iterate).
 - Work directly on `main`; small atomic commits (one logical change, message explains why). Tag phase ends (`phase-N-done`).
 - Run the phase's verification (tests / script) before every commit.
 - `DRY_RUN=true` by default; never modify real Gmail unless explicitly enabled.
-- Labels (hybrid): file into the user's EXISTING labels when there is a clear match (e.g. Finances/*, Newsletters, To Go Through/*);
+- Labels (hybrid): file into the user's EXISTING labels when there is a clear match (e.g. Money/*, Newsletters, Read Later/*);
   otherwise fall back to `Agent/...` (Agent/Needs-Review, Agent/Job-Alerts). Move = add label + remove INBOX; never archive without a label, never delete mail.
   The agent never invents free-form labels: unmatched mail -> Agent/Needs-Review; new labels are only suggested in the digest (Phase 8) and need user approval.
 
