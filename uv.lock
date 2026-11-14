@@ -394,7 +394,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gmail-agent"
+name = "email-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
