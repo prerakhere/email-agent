@@ -59,6 +59,9 @@ class Classification(BaseModel):
     reason: str
     # label: read back from a label the mail already carried (no model call)
     source: Literal["rule", "llm", "label"]
+    # True when the model was unsure and a second look with more of the body could settle it.
+    # Never set for rules, labels or mail blocked by the content filter (it would be blocked again).
+    rereadable: bool = False
 
 
 class Proposal(BaseModel):

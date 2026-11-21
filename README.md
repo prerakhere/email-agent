@@ -16,6 +16,8 @@ single digest.
   notifications collapse into a single line each.
 - **Labels everything:** Each email gets one of your existing labels when one fits, or a dedicated
   label when none does. Labelled emails move out of your inbox, so it stays clear.
+- **Takes a second look when unsure:** Uncertain emails are re-read in full before being left for
+  your review.
 - **Understands your money:** Reads the biller, amount and due date from bills, matches payments to
   the bills they settle, flags what is due soon, and exports it all to a Google Sheet for downstream
   use such as expense tracking.
@@ -44,8 +46,8 @@ graph TD;
     memory -.-> prefilter
     prefilter --> classify
     classify --> propose
-    classify -.->|unsure| reread["re-read the full email<br/>(retry limit)"]:::planned
-    reread -.-> classify
+    classify -->|unsure| reread["re-read the full email<br/>(retry limit)"]
+    reread --> classify
     propose -->|bills or payments found| extract
     propose -->|nothing to extract| finish([end of graph])
     extract --> finish
@@ -61,11 +63,11 @@ graph TD;
 |---|---|
 | **fetch** | Reads the new emails for the configured window. |
 | **prefilter** | Settles what it can without AI: emails you have already filed, and senders it has learned. |
-| **classify** | Sorts the rest into categories with Azure OpenAI; uncertain answers are set aside for review. |
+| **classify** | Sorts the rest into categories with Azure OpenAI; uncertain answers get a second look before being set aside for review. |
+| **re-read** | Gives uncertain emails a second look using their full text, within a retry limit. |
 | **propose** | Chooses a label for each email. |
 | **extract** | Runs only when bills or payments were found, and reads out amounts, dates and payees. |
 | **learn** *(planned)* | Notices emails you moved to a different label and remembers them for future runs. |
-| **re-read** *(planned)* | Gives uncertain emails a second look using their full text, within a retry limit. |
 | **approval** *(planned)* | Pauses the run until you approve the clean-up listed in the digest. |
 
 After the graph, the digest is assembled, labels are applied, bills are exported, and the digest is
@@ -134,8 +136,6 @@ bash scripts/deploy.sh                        # deploy to Azure Functions
   reply. *(LangGraph interrupts and checkpoints)*
 - **Learns from your corrections:** Move an email to a different label, and the next run remembers.
   *(long-term memory)*
-- **Takes a second look when unsure:** Uncertain emails are re-read in full and classified again,
-  within a retry limit. *(graph loops)*
 - **Picks up where it left off:** Large backlogs resume from the last processed email after any
   interruption. *(durable execution)*
 - **Chat with your inbox:** Ask "which bills are due this week?" and follow up in the same conversation.

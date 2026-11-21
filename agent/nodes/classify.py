@@ -19,6 +19,8 @@ from agent.redact import redact
 from agent.schemas import Category, Classification, Email
 
 BODY_CHARS = 500  # cost control: the model only sees the start of the body
+# The second look at mail the first pass was unsure about: the whole kept body (Gmail keeps 3000).
+REREAD_BODY_CHARS = 3000
 DEFAULT_THRESHOLD = 0.7
 BATCH_SIZE = 10  # emails per request
 # Requests in flight at once. Small on purpose: the Azure deployment's request limit is low.
@@ -130,14 +132,14 @@ def build_classifier(llm, profile: Profile | None = None) -> Runnable:
     return classifier_prompt(profile) | llm.with_structured_output(LLMBatch)
 
 
-def build_inputs(email: Email) -> dict[str, str]:
+def build_inputs(email: Email, body_chars: int = BODY_CHARS) -> dict[str, str]:
     """Exactly what leaves this machine for one email (also used by the --show-sent preview)."""
     return {
         "sender": email.sender,
         "subject": redact(email.subject),
         "has_unsubscribe": "yes" if email.list_unsubscribe else "no",
         # Redact first, then trim, so a number cut at the boundary can't leak partial digits.
-        "body_preview": redact(email.body_preview)[:BODY_CHARS],
+        "body_preview": redact(email.body_preview)[:body_chars],
     }
 
 
@@ -162,12 +164,15 @@ def _to_classification(answer: LLMClassification, threshold: float) -> Classific
             confidence=answer.confidence,
             reason=f"low confidence; model guessed {answer.category.value}: {answer.reason}",
             source="llm",
+            rereadable=True,
         )
     return Classification(
         category=answer.category,
         confidence=answer.confidence,
         reason=answer.reason,
         source="llm",
+        # "Nothing fits" may change once the model sees more of the email.
+        rereadable=answer.category == Category.NEEDS_REVIEW,
     )
 
 
@@ -177,6 +182,7 @@ def _no_answer() -> Classification:
         confidence=0.0,
         reason="the model gave no answer for this email",
         source="llm",
+        rereadable=True,
     )
 
 
@@ -207,8 +213,10 @@ def _from_reply(
     return results
 
 
-def _request(emails: list[Email]) -> dict[str, str]:
-    return {"emails": render_emails([build_inputs(email) for email in emails])}
+def _request(emails: list[Email], body_chars: int) -> dict[str, str]:
+    return {
+        "emails": render_emails([build_inputs(email, body_chars) for email in emails])
+    }
 
 
 def classify_many(
@@ -217,6 +225,7 @@ def classify_many(
     threshold: float = DEFAULT_THRESHOLD,
     batch_size: int = BATCH_SIZE,
     max_concurrency: int = DEFAULT_CONCURRENCY,
+    body_chars: int = BODY_CHARS,
 ) -> list[Classification]:
     """Classify emails `batch_size` per request, a few requests at a time, in the same order.
 
@@ -227,7 +236,7 @@ def classify_many(
     return run_in_batches(
         emails,
         chain,
-        make_request=_request,
+        make_request=lambda chunk: _request(chunk, body_chars),
         from_reply=lambda chunk, reply: _from_reply(chunk, reply, threshold),
         on_blocked=lambda _email: _blocked(),
         batch_size=batch_size,

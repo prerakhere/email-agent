@@ -14,7 +14,13 @@ from langchain_core.runnables import Runnable
 from langgraph.graph import END, START, StateGraph
 
 from agent.labels import category_for_labels, resolve_label
-from agent.nodes.classify import BATCH_SIZE, DEFAULT_CONCURRENCY, classify_many
+from agent.nodes.classify import (
+    BATCH_SIZE,
+    BODY_CHARS,
+    DEFAULT_CONCURRENCY,
+    REREAD_BODY_CHARS,
+    classify_many,
+)
 from agent.nodes.extract import extract_bill
 from agent.nodes.prefilter import prefilter
 from agent.nodes.transactions import Transaction, extract_transactions
@@ -22,6 +28,10 @@ from agent.profile import Profile
 from agent.schemas import Bill, Category, Classification, Email, Proposal
 
 BILLING = {Category.BILLS, Category.RECEIPTS}
+# How many times unsure mail is sent back for a longer look. The loop classify -> reread -> classify
+# stops when this count is reached or nothing is unsure; LangGraph's recursion_limit is a backstop.
+MAX_REREADS = 1
+REREAD_NOTE = "after re-reading the full email"
 
 
 class AgentState(TypedDict, total=False):
@@ -35,6 +45,7 @@ class AgentState(TypedDict, total=False):
     bills: dict[str, Bill]
     # keyed by email id; only transaction alerts with a usable amount
     transactions: dict[str, Transaction]
+    reread_round: int  # 0 on the first pass; counts the second looks taken so far
 
 
 def build_graph(
@@ -50,6 +61,7 @@ def build_graph(
     since: datetime | None = None,
     trust_agent_labels: bool = True,
     profile: Profile | None = None,
+    max_rereads: int = MAX_REREADS,
 ):
     profile = profile or Profile()
 
@@ -107,14 +119,49 @@ def build_graph(
         # Only mail no rule decided goes to the model, several emails per request (a 100+ mail day
         # would otherwise hit the request-rate limit). A returned key REPLACES the old value, so we return the
         # merged dict.
+        # On a re-read round only the unsure mail is pending, and it is sent with the longer body.
         classifications = dict(state["classifications"])
         pending = [e for e in state["emails"] if e.id not in classifications]
+        rereading = state.get("reread_round", 0) > 0
         results = classify_many(
-            pending, chain, batch_size=batch_size, max_concurrency=max_concurrency
+            pending,
+            chain,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+            body_chars=REREAD_BODY_CHARS if rereading else BODY_CHARS,
         )
         for email, result in zip(pending, results, strict=True):
+            if rereading:
+                result = result.model_copy(
+                    update={"reason": f"{REREAD_NOTE}: {result.reason}"}
+                )
             classifications[email.id] = result
         return {"classifications": classifications}
+
+    def unsure_ids(state: AgentState) -> list[str]:
+        return [
+            email_id
+            for email_id, c in state["classifications"].items()
+            if c.source == "llm" and c.rereadable
+        ]
+
+    def route_after_classify(state: AgentState) -> str:
+        """Conditional edge that can loop back: another look while mail is unsure and rounds remain."""
+        if state.get("reread_round", 0) < max_rereads and unsure_ids(state):
+            return "reread"
+        return "propose"
+
+    def reread_node(state: AgentState) -> dict:
+        """Forget the unsure answers so classify sees that mail as pending again, and count the round."""
+        unsure = set(unsure_ids(state))
+        return {
+            "classifications": {
+                email_id: c
+                for email_id, c in state["classifications"].items()
+                if email_id not in unsure
+            },
+            "reread_round": state.get("reread_round", 0) + 1,
+        }
 
     def propose_node(state: AgentState) -> dict:
         proposals = []
@@ -178,8 +225,10 @@ def build_graph(
     graph.add_node("propose", propose_node)
     graph.add_edge(START, "fetch")
     graph.add_edge("fetch", "prefilter")
+    graph.add_node("reread", reread_node)
     graph.add_edge("prefilter", "classify")
-    graph.add_edge("classify", "propose")
+    graph.add_conditional_edges("classify", route_after_classify, ["reread", "propose"])
+    graph.add_edge("reread", "classify")  # the cycle: back for a second look
     graph.add_node("extract", extract_node)
     graph.add_conditional_edges("propose", route_after_propose, ["extract", END])
     graph.add_edge("extract", END)
