@@ -440,3 +440,12 @@ def test_clean_up_is_off_unless_asked_for():
     plan, _, _ = prepare(gmail)
     assert plan.content.cleanup is None
     assert "Clean-up" not in plan.rendered.text
+
+
+def test_the_review_link_is_put_on_the_plan_only_when_there_is_a_clean_up_list():
+    link = "https://app.example.invalid/api/cleanup?t=x&e=1&s=y"
+    gmail = FakeGmail([*EMAILS, email("5", "Sale ends tonight")])
+    plan, _, _ = prepare(gmail, cleanup=True, cleanup_link=link)
+    assert plan.content.cleanup_link == link
+    plan, _, _ = prepare(cleanup=True, cleanup_link=link)  # no promotions
+    assert plan.content.cleanup is None and plan.content.cleanup_link is None

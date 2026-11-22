@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -20,9 +21,17 @@ def test_it_stops_on_the_first_error_and_never_traces_commands():
     )  # tracing would print secret values
 
 
-def test_the_two_secrets_go_to_key_vault_and_the_app_only_gets_references():
+def test_the_secrets_go_to_key_vault_and_the_app_only_gets_references():
     assert "google-token-json" in CODE and "azure-openai-api-key" in CODE
-    assert CODE.count("@Microsoft.KeyVault(VaultName=") == 2
+    references = re.findall(
+        r'"(\w+)=@Microsoft\.KeyVault\(VaultName=\$KV;SecretName=([\w-]+)\)"', CODE
+    )
+    assert sorted(references) == [
+        ("AZURE_OPENAI_API_KEY", "azure-openai-api-key"),
+        ("CLEANUP_LINK_SECRET", "cleanup-link-secret"),
+        ("GOOGLE_TOKEN_JSON", "google-token-json"),
+        ("MONGODB_URI", "MONGODB-URI"),
+    ]
     # the secret values themselves are never placed in an app setting
     assert "GOOGLE_TOKEN_JSON=$(" not in CODE and "GOOGLE_TOKEN_JSON=$token" not in CODE
     assert "AZURE_OPENAI_API_KEY=$(" not in CODE
@@ -32,6 +41,16 @@ def test_a_real_run_cannot_start_by_accident():
     assert '"DRY_RUN=true"' in CODE
     assert '"KEEP_IN_INBOX=true"' in CODE
     assert "DRY_RUN=false" not in CODE
+    assert '"CLEANUP_ENABLED=false"' in CODE and "CLEANUP_ENABLED=true" not in CODE
+
+
+def test_the_link_secret_is_generated_only_when_missing_so_open_links_keep_working():
+    assert "az keyvault secret show" in CODE and "cleanup-link-secret" in CODE
+    assert "secrets.token_urlsafe" in CODE
+
+
+def test_the_page_address_is_the_function_app():
+    assert '"CLEANUP_BASE_URL=https://$APP.azurewebsites.net"' in CODE
 
 
 def test_it_never_prints_secret_values():

@@ -148,3 +148,43 @@ def test_rows_are_tall_enough_to_tap_on_a_phone():
     page = html()
     paddings = [int(p) for p in re.findall(r"padding:\s*(\d+)px \d+px \d+px", page)]
     assert paddings and max(paddings) >= 12
+
+
+CLEANUP_LINK = "https://app.example.invalid/api/cleanup?t=2026-11-09-ab12&e=1&s=abc"
+
+
+def with_cleanup(link):
+    from agent.cleanup import CleanupItem, CleanupList
+
+    items = [
+        CleanupItem(email_id="p1", sender="S <s@x.com>", subject="Sale", summary="s")
+    ]
+    return full_digest().model_copy(
+        update={"cleanup": CleanupList(items=items), "cleanup_link": link}
+    )
+
+
+def test_every_link_goes_to_gmail_except_one_clean_up_button():
+    rendered = render_digest(with_cleanup(CLEANUP_LINK), SINCE, UNTIL)
+    hrefs = [
+        h.replace("&amp;", "&") for h in re.findall(r'href="([^"]+)"', rendered.html)
+    ]
+    others = [h for h in hrefs if h != CLEANUP_LINK]
+    assert hrefs.count(CLEANUP_LINK) == 1
+    assert others and all(h.startswith("https://mail.google.com/") for h in others)
+    assert "Review and choose" in rendered.html
+    assert CLEANUP_LINK in rendered.text  # the plain-text version carries it too
+
+
+def test_a_clean_up_link_that_is_not_https_to_the_page_is_never_shown():
+    for bad in (
+        "http://app.example.invalid/api/cleanup?t=1",
+        "https://evil.example/phish",
+        "javascript:alert(1)",
+        'https://app.example.invalid/api/cleanup"><script>',
+    ):
+        rendered = render_digest(with_cleanup(bad), SINCE, UNTIL)
+        hrefs = re.findall(r'href="([^"]+)"', rendered.html)
+        assert all(h.startswith("https://mail.google.com/") for h in hrefs), bad
+        assert "Review and choose" not in rendered.html
+        assert bad not in rendered.text

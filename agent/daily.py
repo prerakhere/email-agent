@@ -104,6 +104,7 @@ def prepare_daily(
     transaction_extractor: Runnable | None = None,
     profile: Profile | None = None,
     cleanup: bool = False,
+    cleanup_link: str | None = None,
 ) -> DailyPlan:
     """Read the window, classify once, summarise and render. Changes and sends nothing."""
     graph = build_graph(
@@ -140,12 +141,14 @@ def prepare_daily(
         now=until,
         profile=profile,
     )
-    if cleanup:  # off for now: offering the list is only useful once approving it works
+    if (
+        cleanup
+    ):  # the job turns this on only for real runs with the approval page configured
+        found = build_cleanup(state["proposals"], state["emails"], summarizer)
         content = content.model_copy(
             update={
-                "cleanup": build_cleanup(
-                    state["proposals"], state["emails"], summarizer
-                )
+                "cleanup": found,
+                "cleanup_link": cleanup_link if found is not None else None,
             }
         )
     log.info("stage digest done after %.0fs", time.monotonic() - started)

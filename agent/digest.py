@@ -59,6 +59,8 @@ class DigestContent(BaseModel):
     cleanup: CleanupList | None = (
         None  # mail offered for the bin; None when off or empty
     )
+    # The signed approval page link: built by our code, never by the model.
+    cleanup_link: str | None = None
 
 
 def _newest_first(emails: list[Email]) -> list[Email]:

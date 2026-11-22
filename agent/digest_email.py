@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parseaddr
 from html import escape
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
 from agent.cleanup import CleanupList
@@ -86,9 +86,24 @@ CLEANUP_TITLE = "Clean-up"
 CLEANUP_NOTE = "Review the list and choose which go; all are ticked to start."
 
 
+CLEANUP_BUTTON = "Review and choose"
+CLEANUP_PATH = "/api/cleanup"
+
+
 def _cleanup_lines(cleanup: CleanupList) -> tuple[str, str]:
     """('23 promotions ready for the bin', the note). The list itself is on the approval page."""
     return f"{_plural(cleanup.count, 'promotion')} ready for the bin", CLEANUP_NOTE
+
+
+def _safe_cleanup_link(link: str | None) -> str | None:
+    """The only non-Gmail link a digest may carry: HTTPS to the approval page, nothing odd in it.
+    Anything else is dropped, so a mistake can never put a strange link in front of the owner."""
+    if not link or any(c in link for c in "\"'<> \n"):
+        return None
+    parts = urlsplit(link)
+    if parts.scheme != "https" or not parts.netloc or parts.path != CLEANUP_PATH:
+        return None
+    return link
 
 
 def _shrink(content: DigestContent, level: int) -> DigestContent:
@@ -251,6 +266,9 @@ def _render_text(content: DigestContent, window: str, shortened: bool = False) -
     if content.cleanup is not None:
         headline, senders = _cleanup_lines(content.cleanup)
         lines += ["", CLEANUP_TITLE, "-" * 30, headline, senders]
+        link = _safe_cleanup_link(content.cleanup_link)
+        if link:
+            lines.append(f"{CLEANUP_BUTTON}: {link}")
     if shortened:
         lines += ["", SHORTENED_NOTE]
     return "\n".join(lines) + "\n"
@@ -469,6 +487,15 @@ def _render_html(content: DigestContent, window: str, shortened: bool = False) -
             f'<p style="margin:8px 0;font-weight:bold">{escape(headline)}</p>',
             f'<p style="margin:0;{MUTED}">{escape(senders)}</p>',
         ]
+        link = _safe_cleanup_link(content.cleanup_link)
+        if link:
+            body.append(
+                '<p style="margin:14px 0 0"><a href="'
+                + escape(link)
+                + '" style="display:inline-block;padding:10px 18px;border-radius:6px;'
+                f'border:2px solid {TILE_BORDER};font-weight:bold;text-decoration:none">'
+                f"{CLEANUP_BUTTON}</a></p>"
+            )
     if shortened:
         body.append(f'<p style="{MUTED}"><i>{escape(SHORTENED_NOTE)}</i></p>')
     return (

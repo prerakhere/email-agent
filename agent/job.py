@@ -5,6 +5,8 @@ Settings come from the environment (app settings in Azure):
                  anything else, or unset, is a dry run that only builds and logs the plan.
   KEEP_IN_INBOX  "false" moves labelled mail out of the inbox; otherwise labels are only added.
   DIGEST_HOURS   how many hours back the digest looks (default 24).
+  CLEANUP_ENABLED  "true" offers this run's promotions for an approved clean-up (real runs only),
+                 using CLEANUP_LINK_SECRET and CLEANUP_BASE_URL for the signed link in the digest.
   DETAILED_ERRORS  "true" lets an unexpected error propagate with its full text, for debugging only:
                  that text can contain secrets, so leave it off.
 
@@ -13,6 +15,7 @@ run failed the job raises, so Azure marks the execution failed and its alert can
 """
 
 import logging
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -20,7 +23,9 @@ from typing import Any
 
 from langchain_core.runnables import Runnable
 
+from agent.approval_link import make_link
 from agent.auth import SignInExpiredError
+from agent.cleanup import CleanupList
 from agent.daily import DailyResult, execute_daily, prepare_daily
 from agent.digest_config import DigestConfig
 from agent.profile import Profile
@@ -43,6 +48,8 @@ class Dependencies:
     group_summarizer: Runnable
     transaction_extractor: Runnable | None = None
     profile: Profile = field(default_factory=Profile)
+    # (thread_id, clean-up list) -> None: pauses a new approval thread. None when clean-up is off.
+    start_approval: Callable[[str, CleanupList], None] | None = None
 
 
 class JobFailedError(RuntimeError):
@@ -60,6 +67,24 @@ def _hours(env: Mapping[str, str]) -> float:
     return hours
 
 
+def _cleanup_thread(
+    env: Mapping[str, str], now: datetime, apply: bool
+) -> tuple[str, str] | None:
+    """(thread id, signed link) when this run should offer a clean-up, else None.
+
+    Only real runs with CLEANUP_ENABLED=true offer one. A missing secret or page address skips the
+    clean-up (with a warning) rather than the digest, which is the main deliverable."""
+    if not apply or env.get("CLEANUP_ENABLED", "").strip().lower() != "true":
+        return None
+    secret = env.get("CLEANUP_LINK_SECRET", "").strip()
+    base_url = env.get("CLEANUP_BASE_URL", "").strip()
+    if not secret or not base_url:
+        log.warning("clean-up skipped: the link secret or page address is not set")
+        return None
+    thread_id = f"{now:%Y-%m-%d}-{uuid.uuid4().hex[:8]}"
+    return thread_id, make_link(base_url, thread_id, now, secret)
+
+
 def run_scheduled(
     env: Mapping[str, str],
     now: datetime,
@@ -68,9 +93,12 @@ def run_scheduled(
     apply = env.get("DRY_RUN", "true").strip().lower() == "false"
     keep_in_inbox = env.get("KEEP_IN_INBOX", "true").strip().lower() != "false"
     hours = _hours(env)
+    thread = _cleanup_thread(env, now, apply)
 
     try:
         deps = build_dependencies(env)
+        if deps.start_approval is None:
+            thread = None  # nothing could pause the run, so offer no button that leads nowhere
         plan = prepare_daily(
             deps.gmail,
             deps.rules,
@@ -84,6 +112,8 @@ def run_scheduled(
             keep_in_inbox=keep_in_inbox,
             transaction_extractor=deps.transaction_extractor,
             profile=deps.profile,
+            cleanup=thread is not None,
+            cleanup_link=thread[1] if thread else None,
         )
     except SignInExpiredError:
         raise  # its message is ours: it says what to do and contains no secret
@@ -108,6 +138,14 @@ def run_scheduled(
         return DailyResult(plan=plan)
 
     result = execute_daily(plan, deps.gmail, deps.sheets)
+    cleanup = plan.content.cleanup
+    # Only once the digest (with its link) is out: a thread nobody can reach is never started.
+    if thread and cleanup is not None and result.digest_message_id is not None:
+        try:
+            deps.start_approval(thread[0], cleanup)
+            log.info("clean-up offered: %d emails awaiting approval", cleanup.count)
+        except Exception as error:  # noqa: BLE001 - recorded like any other failed step
+            result.errors.append(f"start_approval: {type(error).__name__}")
     log.info(
         "daily run done: %d rows added, %d mails labelled, digest sent=%s, %d problems",
         len(result.rows_added),

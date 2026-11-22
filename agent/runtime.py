@@ -12,7 +12,7 @@ from pathlib import Path
 
 from googleapiclient.discovery import build
 
-from agent.approval import build_approval_graph
+from agent.approval import build_approval_graph, start_approval
 from agent.auth import refreshed_credentials
 from agent.checkpoints import build_checkpointer
 from agent.digest_config import load_digest_config
@@ -57,7 +57,21 @@ def build_dependencies(env: Mapping[str, str], root: Path = APP_ROOT) -> Depende
         summarizer=build_summarizer(llm),
         group_summarizer=build_group_summarizer(llm),
         transaction_extractor=build_transaction_extractor(llm),
+        start_approval=_approval_starter(env, gmail),
     )
+
+
+def _approval_starter(env: Mapping[str, str], gmail):
+    """With clean-up on, a function that pauses a new approval thread. The database is only
+    connected when a thread is actually started, so days with nothing to clean never touch it."""
+    if (env.get("CLEANUP_ENABLED") or "").strip().lower() != "true":
+        return None
+
+    def start(thread_id: str, cleanup) -> None:
+        graph = build_approval_graph(gmail, build_checkpointer(env))
+        start_approval(graph, thread_id, cleanup)
+
+    return start
 
 
 def build_approval_runtime(

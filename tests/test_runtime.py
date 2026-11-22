@@ -120,3 +120,17 @@ def test_a_click_needs_only_gmail_and_the_checkpoint_store_never_the_model(googl
     assert google[0][2]["credentials"] == "creds"
     assert seen["env"] == {"GOOGLE_TOKEN_JSON": "{}"}
     assert graph.checkpointer is not None
+
+
+def test_with_clean_up_on_the_run_can_start_an_approval_thread_built_lazily(
+    google, tmp_path, monkeypatch
+):
+    built = []
+    monkeypatch.setattr(runtime, "build_checkpointer", lambda env: built.append(env))
+    deps = build_dependencies({**ENV, "CLEANUP_ENABLED": "true"}, root=tmp_path)
+    assert callable(deps.start_approval)
+    assert built == []  # the database is only touched when a thread is actually started
+
+
+def test_with_clean_up_off_there_is_no_approval_starter(google, tmp_path):
+    assert build_dependencies(ENV, root=tmp_path).start_approval is None
