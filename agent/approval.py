@@ -33,7 +33,7 @@ class ApprovalState(TypedDict, total=False):
 
 @dataclass
 class ApprovalOutcome:
-    status: Literal["binned", "kept", "already_done", "not_found"]
+    status: Literal["binned", "kept", "not_found"]
     binned: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
 
@@ -100,12 +100,14 @@ def pending_items(graph, thread_id: str) -> list[CleanupItem] | None:
 
 
 def resume_approval(graph, thread_id: str, chosen_ids: list[str]) -> ApprovalOutcome:
-    """Answer a paused thread with the ticked ids. A thread can be answered once."""
-    snapshot, waiting = _waiting(graph, thread_id)
-    if not snapshot.values:
-        return ApprovalOutcome("not_found")
+    """Answer a paused thread with the ticked ids. A thread can be answered once: afterwards it is
+    deleted from the store, so answered, expired and unknown threads all come back "not_found"."""
+    _, waiting = _waiting(graph, thread_id)
     if not waiting:
-        return ApprovalOutcome("already_done")
+        return ApprovalOutcome("not_found")
     final = graph.invoke(Command(resume=list(chosen_ids)), _config(thread_id))
+    graph.checkpointer.delete_thread(
+        thread_id
+    )  # nothing is kept once the owner has answered
     binned, failed = final.get("binned", []), final.get("failed", [])
     return ApprovalOutcome("binned" if binned or failed else "kept", binned, failed)

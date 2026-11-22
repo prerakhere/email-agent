@@ -10,6 +10,7 @@ dependencies = [
     "langchain>=1.4.8",
     "langchain-openai>=1.7.3",
     "langgraph>=1.2.19",
+    "langgraph-checkpoint-mongodb>=0.5.1",
     "langsmith>=0.14.17",
     "pydantic>=2.14.2",
     "pymongo>=4.19.0",

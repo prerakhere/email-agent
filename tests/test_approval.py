@@ -77,9 +77,30 @@ def test_a_second_answer_to_a_finished_thread_does_nothing():
     graph, gmail = started()
     resume_approval(graph, "2026-11-22", ["1"])
     outcome = resume_approval(graph, "2026-11-22", ["2", "3"])
-    assert outcome.status == "already_done"
+    assert (
+        outcome.status == "not_found"
+    )  # answered, expired or unknown all look the same
     assert gmail.trashed == ["1"]
     assert pending_items(graph, "2026-11-22") is None
+
+
+def test_an_answered_thread_is_deleted_from_the_store():
+    saver = InMemorySaver()
+    graph = build_approval_graph(FakeGmail(), saver)
+    start_approval(graph, "2026-11-22", CLEANUP)
+    resume_approval(graph, "2026-11-22", [])
+    assert list(saver.list({"configurable": {"thread_id": "2026-11-22"}})) == []
+
+
+def test_a_fresh_process_can_resume_what_another_one_paused():
+    saver = InMemorySaver()  # stands in for the shared database
+    start_approval(build_approval_graph(FakeGmail(), saver), "2026-11-22", CLEANUP)
+    # The Function shuts down; later the click arrives in a new process with a new graph.
+    gmail = FakeGmail()
+    later = build_approval_graph(gmail, saver)
+    assert [i.email_id for i in pending_items(later, "2026-11-22")] == ["1", "2", "3"]
+    outcome = resume_approval(later, "2026-11-22", ["2"])
+    assert gmail.trashed == ["2"] and outcome.status == "binned"
 
 
 def test_an_unknown_thread_is_not_found():
