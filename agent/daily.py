@@ -24,6 +24,7 @@ from typing import Any
 from langchain_core.runnables import Runnable
 
 from agent.apply import ApplyResult, apply_proposals
+from agent.cleanup import build_cleanup
 from agent.digest import DigestContent, build_digest
 from agent.digest_config import DigestConfig
 from agent.digest_email import RenderedDigest, render_digest
@@ -102,6 +103,7 @@ def prepare_daily(
     max_results: int = 500,
     transaction_extractor: Runnable | None = None,
     profile: Profile | None = None,
+    cleanup: bool = False,
 ) -> DailyPlan:
     """Read the window, classify once, summarise and render. Changes and sends nothing."""
     graph = build_graph(
@@ -138,6 +140,14 @@ def prepare_daily(
         now=until,
         profile=profile,
     )
+    if cleanup:  # off for now: offering the list is only useful once approving it works
+        content = content.model_copy(
+            update={
+                "cleanup": build_cleanup(
+                    state["proposals"], state["emails"], summarizer
+                )
+            }
+        )
     log.info("stage digest done after %.0fs", time.monotonic() - started)
     return DailyPlan(
         content=content,

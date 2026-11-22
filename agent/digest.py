@@ -13,6 +13,7 @@ from typing import Literal
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
+from agent.cleanup import CleanupList
 from agent.digest_config import DigestConfig, DigestSection
 from agent.digest_tables import (
     EmailRef,
@@ -55,6 +56,9 @@ class DigestContent(BaseModel):
     other_categories: list[str] = Field(
         default_factory=list
     )  # which categories those were
+    cleanup: CleanupList | None = (
+        None  # mail offered for the bin; None when off or empty
+    )
 
 
 def _newest_first(emails: list[Email]) -> list[Email]:

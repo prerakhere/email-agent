@@ -15,6 +15,7 @@ from html import escape
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+from agent.cleanup import CleanupList
 from agent.digest import DigestContent, SectionSummary
 from agent.digest_tables import EmailRef, TableData
 from agent.nodes.summarize import EmailSummary
@@ -79,6 +80,15 @@ def _other_line(content: DigestContent) -> str:
 
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+CLEANUP_TITLE = "Clean-up"
+CLEANUP_NOTE = "Review the list and choose which go; all are ticked to start."
+
+
+def _cleanup_lines(cleanup: CleanupList) -> tuple[str, str]:
+    """('23 promotions ready for the bin', the note). The list itself is on the approval page."""
+    return f"{_plural(cleanup.count, 'promotion')} ready for the bin", CLEANUP_NOTE
 
 
 def _shrink(content: DigestContent, level: int) -> DigestContent:
@@ -238,6 +248,9 @@ def _render_text(content: DigestContent, window: str, shortened: bool = False) -
             "",
             _other_line(content),
         ]
+    if content.cleanup is not None:
+        headline, senders = _cleanup_lines(content.cleanup)
+        lines += ["", CLEANUP_TITLE, "-" * 30, headline, senders]
     if shortened:
         lines += ["", SHORTENED_NOTE]
     return "\n".join(lines) + "\n"
@@ -446,6 +459,16 @@ def _render_html(content: DigestContent, window: str, shortened: bool = False) -
     ]
     if content.other_count:
         body.append(f'<p style="{MUTED}">{escape(_other_line(content))}</p>')
+    if content.cleanup is not None:
+        headline, senders = _cleanup_lines(content.cleanup)
+        body += [
+            (
+                '<h2 style="font-size:18px;margin:28px 0 8px;padding-bottom:6px;'
+                f'border-bottom:2px solid {TILE_BORDER}">{CLEANUP_TITLE}</h2>'
+            ),
+            f'<p style="margin:8px 0;font-weight:bold">{escape(headline)}</p>',
+            f'<p style="margin:0;{MUTED}">{escape(senders)}</p>',
+        ]
     if shortened:
         body.append(f'<p style="{MUTED}"><i>{escape(SHORTENED_NOTE)}</i></p>')
     return (

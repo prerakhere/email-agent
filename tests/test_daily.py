@@ -93,6 +93,8 @@ class Models:
                 category = Category.BILLS
             elif subject.startswith("Interview"):
                 category = Category.IMPORTANT
+            elif subject.startswith("Sale"):
+                category = Category.PROMOTIONS
             else:
                 category = Category.NEWSLETTERS
             items.append(
@@ -423,3 +425,18 @@ def test_the_profile_decides_which_existing_label_newsletters_are_filed_into():
 
 def test_without_a_profile_newsletters_get_the_agent_label():
     assert newsletter_labels(None) == {"Agent/Newsletters"}
+
+
+def test_with_clean_up_on_the_plan_lists_the_promotions_for_the_bin():
+    gmail = FakeGmail([*EMAILS, email("5", "Sale ends tonight")])
+    plan, _, _ = prepare(gmail, cleanup=True)
+    assert plan.content.cleanup is not None
+    assert plan.content.cleanup.email_ids == ["5"]
+    assert "1 promotion ready for the bin" in plan.rendered.text
+
+
+def test_clean_up_is_off_unless_asked_for():
+    gmail = FakeGmail([*EMAILS, email("5", "Sale ends tonight")])
+    plan, _, _ = prepare(gmail)
+    assert plan.content.cleanup is None
+    assert "Clean-up" not in plan.rendered.text
