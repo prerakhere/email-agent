@@ -172,6 +172,13 @@ class GmailClient:
             body={"addLabelIds": [label_id], "removeLabelIds": ["INBOX"]},
         ).execute()
 
+    def trash(self, email_id: str) -> None:
+        """Move one message to the Bin, where Gmail keeps it for 30 days. Never deletes it.
+
+        Mechanics only: only mail the owner ticked on the approval page reaches this.
+        """
+        self._service.users().messages().trash(userId="me", id=email_id).execute()
+
     def _list_message_ids(self, max_results: int, **query) -> list[str]:
         """Message ids matching `query` (messages.list kwargs), following pagination."""
         ids: list[str] = []

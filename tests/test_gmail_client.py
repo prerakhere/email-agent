@@ -364,3 +364,13 @@ def test_fetch_since_stops_at_max_results():
 
 def test_fetch_since_with_no_mail_returns_an_empty_list():
     assert GmailClient(fake_service([{}], {})).fetch_since(SINCE) == []
+
+
+def test_trash_moves_one_message_to_the_bin_and_never_deletes():
+    service = fake_service([], {})
+    GmailClient(service).trash("m1")
+    messages = service.users.return_value.messages.return_value
+    messages.trash.assert_called_once_with(userId="me", id="m1")
+    messages.trash.return_value.execute.assert_called_once()
+    messages.delete.assert_not_called()
+    messages.batchDelete.assert_not_called()
