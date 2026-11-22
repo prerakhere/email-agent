@@ -1,15 +1,29 @@
 import function_app
 
 # Azure's get_functions() may only be called once per app (a second call reports a duplicate name).
-(FUNCTION,) = function_app.app.get_functions()
+FUNCTIONS = {f.get_function_name(): f for f in function_app.app.get_functions()}
+FUNCTION = FUNCTIONS["daily_digest"]
 TIMER = next(
     b for b in FUNCTION.get_bindings() if b.type == "timerTrigger"
 ).get_dict_repr()
+PAGE = next(
+    b for b in FUNCTIONS["cleanup_page"].get_bindings() if b.type == "httpTrigger"
+).get_dict_repr()
 
 
-def test_there_is_exactly_one_function_a_daily_timer():
-    assert FUNCTION.get_function_name() == "daily_digest"
+def test_there_are_two_functions_the_daily_timer_and_the_clean_up_page():
+    assert set(FUNCTIONS) == {"daily_digest", "cleanup_page"}
     assert TIMER["type"] == "timerTrigger"
+
+
+def test_the_clean_up_page_answers_get_and_post_at_api_cleanup():
+    assert PAGE["route"] == "cleanup"
+    assert sorted(str(getattr(m, "value", m)).lower() for m in PAGE["methods"]) == [
+        "get",
+        "post",
+    ]
+    # Anonymous at the Azure level on purpose: the signed link is the authentication.
+    assert str(PAGE["authLevel"]).lower().endswith("anonymous")
 
 
 def test_it_runs_at_0030_utc_which_is_6am_in_india():

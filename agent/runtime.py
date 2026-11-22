@@ -12,7 +12,9 @@ from pathlib import Path
 
 from googleapiclient.discovery import build
 
+from agent.approval import build_approval_graph
 from agent.auth import refreshed_credentials
+from agent.checkpoints import build_checkpointer
 from agent.digest_config import load_digest_config
 from agent.gmail_client import GmailClient
 from agent.job import Dependencies
@@ -56,3 +58,13 @@ def build_dependencies(env: Mapping[str, str], root: Path = APP_ROOT) -> Depende
         group_summarizer=build_group_summarizer(llm),
         transaction_extractor=build_transaction_extractor(llm),
     )
+
+
+def build_approval_runtime(
+    env: Mapping[str, str], checkpointer_factory=build_checkpointer
+):
+    """What a click on the approval page needs: Gmail (to move mail to the Bin) and the checkpoint
+    store holding the paused run. No model: a click never calls the LLM."""
+    creds = refreshed_credentials(env)
+    gmail = GmailClient(build("gmail", "v1", credentials=creds, cache_discovery=False))
+    return build_approval_graph(gmail, checkpointer_factory(env))

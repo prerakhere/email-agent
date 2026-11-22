@@ -102,3 +102,21 @@ def test_a_missing_azure_setting_fails_fast_before_any_google_call(
     env = {k: v for k, v in ENV.items() if k != "AZURE_OPENAI_API_KEY"}
     with pytest.raises(ValueError, match="AZURE_OPENAI_API_KEY"):
         build_dependencies(env, root=tmp_path)
+
+
+def test_a_click_needs_only_gmail_and_the_checkpoint_store_never_the_model(google):
+    seen = {}
+
+    def checkpointer_factory(env):
+        seen["env"] = env
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        return InMemorySaver()
+
+    graph = runtime.build_approval_runtime(
+        {"GOOGLE_TOKEN_JSON": "{}"}, checkpointer_factory=checkpointer_factory
+    )
+    assert [(api, version) for api, version, _ in google] == [("gmail", "v1")]
+    assert google[0][2]["credentials"] == "creds"
+    assert seen["env"] == {"GOOGLE_TOKEN_JSON": "{}"}
+    assert graph.checkpointer is not None
