@@ -7,7 +7,6 @@ dependencies = [
     "azure-functions>=1.26.0",
     "google-api-python-client>=2.201.0",
     "google-auth-oauthlib>=1.5.0",
-    "langchain>=1.4.8",
     "langchain-openai>=1.7.3",
     "langgraph>=1.2.19",
     "langgraph-checkpoint-mongodb>=0.5.1",
@@ -19,7 +18,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "mcp>=2.3.0",
     "pytest>=9.2.0",
     "ruff>=0.17.3",
 ]
