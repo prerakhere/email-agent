@@ -4,8 +4,8 @@
 
 The email agent helps you keep your inbox clean. It reads your inbox, tells you which emails need
 your attention and what to do about them, and labels them, learning your labelling style as it goes.
-Newsletters become short summaries instead of an unread pile, spam and promotions move to the bin
-after your approval (coming soon), and bills and payments are pulled out. Everything arrives in a
+Newsletters become short summaries instead of an unread pile, promotions move to the bin only after
+your approval, and bills and payments are pulled out. Everything arrives in a
 single digest.
 
 ## Features
@@ -18,6 +18,8 @@ single digest.
   label when none does. Labelled emails move out of your inbox, so it stays clear.
 - **Takes a second look when unsure:** Uncertain emails are re-read in full before being left for
   your review.
+- **Asks before it clears:** Promotions are listed with a short summary each, and only the ones you
+  leave ticked move to the bin, where they stay recoverable for 30 days.
 - **Understands your money:** Reads the biller, amount and due date from bills, matches payments to
   the bills they settle, flags what is due soon, and exports it all to a Google Sheet for downstream
   use such as expense tracking.
@@ -52,10 +54,10 @@ graph TD;
     propose -->|nothing to extract| finish([end of graph])
     extract --> finish
     finish --> digest["build and send the digest"]
-    digest -.-> approval{{"wait for your approval"}}:::planned
-    approval -.->|approved| bin["move useless emails to the bin"]:::planned
-    approval -.->|rejected| done([done]):::planned
-    bin -.-> done
+    digest --> approval{{"wait for your approval<br/>(paused and saved)"}}
+    approval -->|ticked emails| bin["move ticked promotions to the bin"]
+    approval -->|keep all| done([done])
+    bin --> done
     classDef planned stroke-dasharray: 5 5
 ```
 
@@ -68,10 +70,12 @@ graph TD;
 | **propose** | Chooses a label for each email. |
 | **extract** | Runs only when bills or payments were found, and reads out amounts, dates and payees. |
 | **learn** *(planned)* | Notices emails you moved to a different label and remembers them for future runs. |
-| **approval** *(planned)* | Pauses the run until you approve the clean-up listed in the digest. |
+| **approval** | Pauses until you choose, on a private page linked from the digest, which promotions go. |
+| **bin** | Moves only the emails you ticked to the bin, where they stay recoverable for 30 days. |
 
 After the graph, the digest is assembled, labels are applied, bills are exported, and the digest is
-sent. On the roadmap, every step's progress is saved, so a long run resumes where it stopped.
+sent. When there is something to clear, a small approval graph then pauses, its state saved, until you
+answer. On the roadmap, every step's progress is saved, so a long run resumes where it stopped.
 
 ### In the cloud
 
@@ -83,6 +87,8 @@ flowchart LR
     func -- "read, label, send digest" --> mail[("Mailbox")]
     func -- "export bills" --> sheet[("Google Sheets")]
     func -- "logs" --> logs["Application Insights"]
+    func -- "paused approvals" --> db[("Azure DocumentDB")]
+    owner -- "approves from the digest" --> func
     logs --> alert["Alert rule"] --> owner["📧 Owner"]
 ```
 
@@ -91,7 +97,9 @@ flowchart LR
 **LangGraph** runs the workflow. Every step reads from and writes to one typed, shared state, which
 keeps each step small and independently testable. A conditional edge skips extraction entirely when
 there is nothing to extract, and every step streams its progress, so a slow or stalled run shows
-exactly where it is.
+exactly where it is. Clearing promotions uses an interrupt: the run pauses at the approval step, its
+state is checkpointed to a database, and your choice resumes it exactly where it stopped. Uncertain
+emails loop back for a second look within a retry limit.
 
 **LangChain** handles every conversation with the model. Prompts are templates, with your personal
 preferences filled in safely at run time. Every answer is forced into a typed schema and validated
@@ -104,9 +112,11 @@ an email the model refuses is retried on its own without failing the rest.
 - **Redaction before the model:** Account, card, phone and ID numbers, one-time codes and link paths
   are masked locally; amounts and dates are kept.
 - **Prompt-injection defences:** Email text is treated as untrusted data, links written by the model
-  are dropped, every link in the digest points back to your own mailbox, and all text is escaped.
+  are dropped, every email link in the digest points back to your own mailbox, and all text is escaped.
 - **Secrets stay secret:** They live in Key Vault, and errors are logged without their message text.
 - **No training on your emails:** Azure OpenAI does not use your emails to train or improve its models.
+- **Nothing is cleared without you:** Clean-up links are signed and expire, opening one changes
+  nothing, and only the emails you tick move to the bin.
 
 ## Preferences and Configurations
 
@@ -131,9 +141,8 @@ bash scripts/deploy.sh                        # deploy to Azure Functions
 
 ## Roadmap
 
-- **Approve before it acts:** The agent pauses and waits for your OK before moving clearly useless
-  emails to the bin (recoverable for 30 days), adding a new label or sender rule, or sending a drafted
-  reply. *(LangGraph interrupts and checkpoints)*
+- **Approve more before it acts:** The same pause-and-approve step extends to adding a new label or
+  sender rule, and to sending a drafted reply.
 - **Learns from your corrections:** Move an email to a different label, and the next run remembers.
   *(long-term memory)*
 - **Picks up where it left off:** Large backlogs resume from the last processed email after any
