@@ -67,18 +67,12 @@ stopped.
 
 ### In the cloud
 
-```mermaid
-flowchart LR
-    trigger["⏰ Scheduled trigger"] --> func["Azure Functions<br/>runs the LangGraph agent"]
-    kv["🔐 Azure Key Vault<br/>secrets"] -. "references" .-> func
-    func -- "redacted text" --> aoai["Azure OpenAI"]
-    func -- "read, label, send digest" --> mail[("Mailbox")]
-    func -- "export bills" --> sheet[("Google Sheets")]
-    func -- "logs" --> logs["Application Insights"]
-    func -- "paused approvals" --> db[("Azure DocumentDB")]
-    owner -- "approves from the digest" --> func
-    logs --> alert["Alert rule"] --> owner["📧 Owner"]
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/cloud-dark.svg">
+    <img src="docs/diagrams/cloud.svg" alt="Cloud architecture: Azure Functions with Key Vault, Azure OpenAI, Cosmos DB and Application Insights, connected to Gmail, Google Sheets and you" width="780">
+  </picture>
+</p>
 
 ## Inside the agent: LangGraph and LangChain
 
