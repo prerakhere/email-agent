@@ -36,46 +36,34 @@ single digest.
 
 ### The agent
 
-The LangGraph workflow. Solid steps run today, wired exactly as in the code; dashed steps are on the
-roadmap.
+The agent is built with LangGraph and LangChain: a graph reads and classifies, ordinary code labels
+and summarizes, and a second graph pauses for your approval before clearing clutter.
 
-```mermaid
-graph TD;
-    start([start]) --> fetch
-    fetch --> prefilter
-    fetch -.-> learn["learn from your corrections"]:::planned
-    learn -.-> memory[("memory:<br/>rules and corrections")]:::planned
-    memory -.-> prefilter
-    prefilter --> classify
-    classify --> propose
-    classify -->|unsure| reread["re-read the full email<br/>(retry limit)"]
-    reread --> classify
-    propose -->|bills or payments found| extract
-    propose -->|nothing to extract| finish([end of graph])
-    extract --> finish
-    finish --> digest["build and send the digest"]
-    digest --> approval{{"wait for your approval<br/>(paused and saved)"}}
-    approval -->|ticked emails| bin["move ticked promotions to the bin"]
-    approval -->|keep all| done([done])
-    bin --> done
-    classDef planned stroke-dasharray: 5 5
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/agent-dark.svg">
+    <img src="docs/diagrams/agent.svg" alt="The agent in three stages: Read and Classify, Label and Summarize, Clear Clutter" width="780">
+  </picture>
+</p>
 
 | Step | What it does |
 |---|---|
 | **fetch** | Reads the new emails for the configured window. |
 | **prefilter** | Settles what it can without AI: emails you have already filed, and senders it has learned. |
-| **classify** | Sorts the rest into categories with Azure OpenAI; uncertain answers get a second look before being set aside for review. |
+| **redact** | Masks account, card, phone and ID numbers, one-time codes and link paths before any text reaches the model. |
+| **classify** | Sorts the rest into categories with Azure OpenAI. |
 | **re-read** | Gives uncertain emails a second look using their full text, within a retry limit. |
-| **propose** | Chooses a label for each email. |
+| **choose labels** | Picks a label for each email: one of your own when it fits, otherwise a dedicated one. *(`propose` in the code)* |
 | **extract** | Runs only when bills or payments were found, and reads out amounts, dates and payees. |
-| **learn** *(planned)* | Notices emails you moved to a different label and remembers them for future runs. |
-| **approval** | Pauses until you choose, on a private page linked from the digest, which promotions go. |
-| **bin** | Moves only the emails you ticked to the bin, where they stay recoverable for 30 days. |
+| **apply labels** | Labels each email and moves it out of the inbox; important, unclear and starred emails stay in sight. |
+| **logging** | Exports bills to a Google Sheet. |
+| **summarize & send digest** | Writes the short summaries and sends the digest. |
+| **wait for you** | Pauses, its state saved, until you approve or reject the clean-up on a private page linked from the digest. |
+| **move approved emails to bin** | Moves only the emails you approved, where they stay recoverable for 30 days. |
 
-After the graph, the digest is assembled, labels are applied, bills are exported, and the digest is
-sent. When there is something to clear, a small approval graph then pauses, its state saved, until you
-answer. On the roadmap, every step's progress is saved, so a long run resumes where it stopped.
+Nothing in the mailbox changes while the agent reads and classifies: that stage only produces the plan
+the next two carry out. On the roadmap, every step's progress is saved, so a long run resumes where it
+stopped.
 
 ### In the cloud
 
